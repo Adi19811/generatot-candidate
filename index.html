@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Generator CV - Covebo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- Biblioteki do obsługi plików bez AI (lokalnie) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: 'Poppins', sans-serif; touch-action: pan-x pan-y; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+    @media (max-width: 768px) {
+        .mobile-view-form #cv-preview-container { display: none; }
+        .mobile-view-preview #cv-form-container { display: none; }
+    }
+    .drag-ghost { opacity: 0.4; border: 2px dashed #ef4444; }
+    @keyframes pulse-red {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .loading-pulse { animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+  }
+}
+</script>
+</head>
+<body class="bg-gray-100 overscroll-none">
+  <div id="root"></div>
+  <script type="module">
+    import React, { useState, useEffect, useRef } from 'react';
+    import ReactDOM from 'react-dom/client';
+
+    // Konfiguracja PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // --- UTILS ---
+    const generateUniqueId = () => new Date().getTime().toString() + Math.random().toString(36).substring(2, 9);
+
+    // --- LOKALNY PARSER TEKSTU (Zastępuje AI) ---
+    const parseCvText = (text) => {
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      const data = {
+        name: '', dob: '', personalDetails: [], skills: [], languages: [], workExperience: [], education: []
+      };
+
+      // Próba zgadnięcia imienia (zwykle pierwsza linia)
+      if (lines[0]) data.name = lines[0].substring(0, 50);
+
+      // Szukanie daty urodzenia (regex)
+      const dobMatch = text.match(/(\d{2}[.\/-]\d{2}[.\/-]\d{4})|(\d{4}[.\/-]\d{2}[.\/-]\d{2})/);
+      if (dobMatch) data.dob = dobMatch[0];
+
+      let currentSection = '';
+      
+      lines.forEach(line => {
+        const l = line.toLowerCase();
+        if (l.includes('doświadczenie') || l.includes('experience') || l.includes('historia zatrudnienia')) {
+          currentSection = 'work'; return;
+        }
+        if (l.includes('edukacja') || l.includes('wykształcenie') || l.includes('education') || l.includes('szkoł')) {
+          currentSection = 'edu'; return;
+        }
+        if (l.includes('umiejętności') || l.includes('skills')) {
+          currentSection = 'skills'; return;
+        }
+        if (l.includes('język') || l.includes('languages')) {
+          currentSection = 'lang'; return;
+        }
+        if (l.includes('uprawnienia') || l.includes('kwalifikacje') || l.includes('prawo jazdy')) {
+          currentSection = 'qual'; return;
+        }
+
+        // Dodawanie do sekcji
+        if (currentSection === 'skills' && line.length < 100) data.skills.push(line);
+        if (currentSection === 'lang' && line.length < 50) data.languages.push(line);
+        if (currentSection === 'qual' && line.length < 100) data.personalDetails.push(line);
+        
+        // Uproszczone doświadczenie (każda linia to nowa firma/rola jeśli zawiera daty)
+        if (currentSection === 'work' && (line.includes('20') || line.includes('.'))) {
+           if (data.workExperience.length < 5) {
+             data.workExperience.push({
+               id: generateUniqueId(),
+               jobTitle: line.split(/[,-]/)[0]?.trim() || 'Stanowisko',
+               company: line.split(/[,-]/)[1]?.trim() || 'Firma',
+               dateRange: line.match(/\d{2}.\d{4}/g)?.join(' - ') || 'Okres',
+               tasks: [{ id: generateUniqueId(), text: 'Szczegóły z dokumentu...' }]
+             });
+           }
+        }
+
+        if (currentSection === 'edu' && data.education.length < 3) {
+          data.education.push({
+            id: generateUniqueId(),
+            degree: line.split(/[,-]/)[0]?.trim() || 'Stopień',
+            schoolName: line.split(/[,-]/)[1]?.trim() || 'Szkoła',
+            dateRange: 'Okres',
+            description: ''
+          });
+        }
+      });
+
+      return data;
+    };
+
+    // --- TRANSLATIONS ---
+    const translations = {
+      pl: {
+        editorTitle: "Edytor CV",
+        basicInfo: "Dane Podstawowe",
+        fullName: "Imię i Nazwisko",
+        dob: "Data urodzenia",
+        profilePic: "Zdjęcie Profilowe",
+        workExp: "Doświadczenie Zawodowe",
+        workExpDesc: "Dodaj doświadczenie / edytuj doświadczenie",
+        addWorkExp: " + Dodaj nowe doświadczenie",
+        jobTitle: "Stanowisko",
+        company: "Firma",
+        period: "Okres (np. 01.2020 - 12.2023)",
+        responsibilities: "Zakres obowiązków (lista)",
+        dutyPlaceholder: "Obowiązek...",
+        addDuty: " + Dodaj obowiązek",
+        removeWorkExp: "Usuń to doświadczenie",
+        newWorkExp: "Nowe doświadczenie zawodowe",
+        qualifications: "Uprawnienia (np. Prawo Jazdy, SEP)",
+        qualPlaceholder: "Wózek widłowy...",
+        addQual: "+ Dodaj uprawnienie",
+        languages: "Znajomość Języków Obcych",
+        langPlaceholder: "Angielski B1",
+        addLang: "+ Dodaj język",
+        skills: "Dodatkowe Umiejętności",
+        skillPlaceholder: "Obsługa maszyn CNC",
+        addSkill: "+ Dodaj umiejętność",
+        education: "Edukacja",
+        eduDesc: "Dodaj szkołę / edytuj edukację",
+        addEdu: " + Dodaj nowy wpis edukacyjny",
+        degree: "Stopień/Kwalifikacja",
+        school: "Nazwa instytucji",
+        description: "Opis (opcjonalnie)",
+        descPlaceholder: "Krótki opis kierunku/szkoły...",
+        removeEdu: "Usuń tę edukację",
+        newEdu: "Nowa szkoła/kurs",
+        downloadPdf: "Pobierz CV jako PDF",
+        previewDob: "Data urodzenia",
+        previewQual: "Uprawnienia",
+        previewSkills: "Dodatkowe umiejętności",
+        previewLang: "Znajomość języków obcych",
+        previewExp: "Doświadczenie",
+        previewEdu: "Edukacja",
+        previewCV: "Curriculum vitae",
+        sectionQual: "Uprawnienia",
+        sectionLang: "Znajomość Języków Obcych",
+        sectionSkills: "Dodatkowe Umiejętności",
+        importTitle: "Skanuj dokument (Offline)",
+        importBtn: "Wczytaj plik (PDF/JPG)",
+        importing: "Przetwarzanie lokalne...",
+        importSuccess: "Dokument przeanalizowany!",
+        importError: "Błąd odczytu pliku."
+      },
+      en: {
+        editorTitle: "CV Editor",
+        basicInfo: "Basic Information",
+        fullName: "Full Name",
+        dob: "Date of Birth",
+        profilePic: "Profile Picture",
+        workExp: "Work Experience",
+        workExpDesc: "Add experience / edit experience",
+        addWorkExp: " + Add new experience",
+        jobTitle: "Job Title",
+        company: "Company",
+        period: "Period (e.g. 01.2020 - 12.2023)",
+        responsibilities: "Responsibilities (list)",
+        dutyPlaceholder: "Duty...",
+        addDuty: " + Add duty",
+        removeWorkExp: "Remove this experience",
+        newWorkExp: "New Work Experience",
+        qualifications: "Qualifications (e.g. Licenses)",
+        qualPlaceholder: "License...",
+        addQual: "+ Add qualification",
+        languages: "Languages",
+        langPlaceholder: "English B1",
+        addLang: "+ Add language",
+        skills: "Additional Skills",
+        skillPlaceholder: "Skill...",
+        addSkill: "+ Add skill",
+        education: "Education",
+        eduDesc: "Add school / edit education",
+        addEdu: " + Add new education entry",
+        degree: "Degree/Qualification",
+        school: "Institution Name",
+        description: "Description (optional)",
+        descPlaceholder: "Short description...",
+        removeEdu: "Remove this education",
+        newEdu: "New School/Course",
+        downloadPdf: "Download CV as PDF",
+        previewDob: "Date of Birth",
+        previewQual: "Qualifications",
+        previewSkills: "Additional Skills",
+        previewLang: "Languages",
+        previewExp: "Experience",
+        previewEdu: "Education",
+        previewCV: "Curriculum Vitae",
+        sectionQual: "Qualifications",
+        sectionLang: "Languages",
+        sectionSkills: "Additional Skills",
+        importTitle: "Scan document (Offline)",
+        importBtn: "Load file (PDF/JPG)",
+        importing: "Processing locally...",
+        importSuccess: "Document parsed!",
+        importError: "File read error."
+      }
+    };
+
+    // --- PDF GENERATOR ---
+    const createPdf = async (elementId, outputType = 'save') => {
+      const originalElement = document.getElementById(elementId);
+      if (!originalElement) throw new Error(`Element with id "${elementId}" not found.`);
+      const clone = originalElement.cloneNode(true);
+      clone.classList.remove('shadow-2xl'); 
+      clone.style.position = 'absolute';
+      clone.style.top = '0';
+      clone.style.left = '-9999px';
+      clone.style.width = '210mm';
+      clone.style.height = 'auto';
+      clone.style.zoom = '1'; 
+      clone.style.transform = 'none';
+      clone.style.margin = '0';
+      let logoDataUrl = null;
+      const logoWrapper = clone.querySelector('.cv-logo-wrapper');
+      if (logoWrapper) {
+          const img = logoWrapper.querySelector('img');
+          if (img) {
+             try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+                canvas.getContext('2d').drawImage(img, 0, 0);
+                logoDataUrl = canvas.toDataURL('image/png');
+             } catch (e) { console.warn("Logo failed", e); }
+          }
+          logoWrapper.style.display = 'none';
+      }
+      document.body.appendChild(clone);
+      try {
+        const scale = 3;
+        const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY, allowTaint: true });
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const sourceWidthPx = canvas.width; const pxPerMm = sourceWidthPx / 210;
+        let startY = 0;
+        while (startY < canvas.height) {
+          if (startY > 0) pdf.addPage();
+          const pageHeightPx = 297 * pxPerMm;
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = canvas.width; tempCanvas.height = Math.min(pageHeightPx, canvas.height - startY);
+          tempCanvas.getContext('2d').drawImage(canvas, 0, startY, canvas.width, tempCanvas.height, 0, 0, canvas.width, tempCanvas.height);
+          pdf.addImage(tempCanvas.toDataURL('image/png'), 'PNG', 0, 0, 210, tempCanvas.height / pxPerMm);
+          if (logoDataUrl) pdf.addImage(logoDataUrl, 'PNG', 210 - 34, 297 - 25, 24, 15);
+          startY += pageHeightPx;
+        }
+        if (outputType === 'save') pdf.save('cv.pdf'); else return pdf.output('blob');
+      } finally { document.body.removeChild(clone); }
+    };
+
+    // --- ICONS ---
+    const ChevronIcon = ({ className }) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className }, React.createElement('polyline', { points: "6 9 12 15 18 9" }));
+    const DownloadIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement('polyline', { points: "7 10 12 15 17 10" }), React.createElement('line', { x1: "12", y1: "15", x2: "12", y2: "3" }));
+    const MailIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('rect', { width: "20", height: "16", x: "2", y: "4", rx: "2" }), React.createElement('path', { d: "m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" }));
+    const MessageIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" }));
+    const DragHandleIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('circle', { cx: "9", cy: "5", r: "1" }), React.createElement('circle', { cx: "9", cy: "12", r: "1" }), React.createElement('circle', { cx: "9", cy: "19", r: "1" }), React.createElement('circle', { cx: "15", cy: "5", r: "1" }), React.createElement('circle', { cx: "15", cy: "12", r: "1" }), React.createElement('circle', { cx: "15", cy: "19", r: "1" }));
+    const UploadIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement('polyline', { points: "17 8 12 3 7 8" }), React.createElement('line', { x1: "12", y1: "3", x2: "12", y2: "15" }));
+
+    // --- PREVIEW ---
+    const SectionTitle = ({ children }) => React.createElement('h2', { className: "text-[#E31D2A] text-lg tracking-[0.3em] font-semibold mb-6 uppercase" }, children);
+
+    const CvPreview = ({ cvData, id, className, onImagePositionChange, lang = 'pl' }) => {
+      const { name, profilePictureUrl, imagePosition, dob, personalDetails, skills, languages, workExperience, education } = cvData;
+      const t = translations[lang]; 
+      const hasImage = profilePictureUrl && !profilePictureUrl.includes('placehold.co');
+      return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
+        React.createElement('header', { className: "relative text-white h-[140px]" },
+          React.createElement('img', { src: "Covebostopka.png", alt: "Nagłówek", className: "absolute inset-0 w-full h-full object-cover z-0" }),
+          React.createElement('div', { className: "relative z-10 flex items-center w-full h-full px-10" },
+            React.createElement('div', { className: 'w-1/2 ml-auto flex justify-end items-center text-right' },
+              React.createElement('h1', { className: "text-4xl font-bold leading-tight uppercase drop-shadow-md" }, name || 'Imię i Nazwisko')
+            )
+          ),
+          hasImage && React.createElement('div', { 
+            className: "absolute left-10 rounded-full bg-white p-2 shadow-lg z-20 cursor-move group", 
+            style: { top: `${140 - 75 + 50}px`, width: `150px`, height: `150px` },
+            onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); const startX = e.clientX, startY = e.clientY, startPos = {...imagePosition}; const onMove = (me) => { const dx = me.clientX - startX, dy = me.clientY - startY; onImagePositionChange({ x: Math.max(0, Math.min(100, startPos.x - dx * 0.2)), y: Math.max(0, Math.min(100, startPos.y - dy * 0.2)) }); }; const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }; window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp); }
+          },
+            React.createElement('div', { className: "w-full h-full rounded-full overflow-hidden relative" },
+                React.createElement('img', { src: profilePictureUrl, alt: name, className: "absolute inset-0 w-full h-full object-cover pointer-events-none block", style: { objectPosition: `${imagePosition.x}% ${imagePosition.y}%` } }),
+                React.createElement('div', { className: "absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 pointer-events-none text-white text-xs font-bold" }, "Przesuń")
+            )
+          )
+        ),
+        React.createElement('main', { className: "flex flex-row flex-grow" },
+          React.createElement('div', { className: "w-[38%] pl-10 pr-6 order-1 flex flex-col", style: { paddingTop: hasImage ? '125px' : '40px' } },
+            React.createElement('div', { className: "bg-gray-100 p-6 flex-grow" },
+                dob && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewDob), React.createElement('p', { className: "text-sm text-black" }, dob)),
+                personalDetails?.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewQual), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, personalDetails.map(d => React.createElement('li', { key: d.id }, d.text)))),
+                skills?.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewSkills), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, skills.map(s => React.createElement('li', { key: s.id }, s.text)))),
+                languages?.length > 0 && React.createElement('div', null, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewLang), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, languages.map(l => React.createElement('li', { key: l.id }, l.text))))
+            )
+          ),
+          React.createElement('div', { className: "w-[62%] p-6 pr-10 pt-20 order-2 flex flex-col" },
+            React.createElement('div', { className: "w-full text-center text-4xl font-bold text-gray-300 tracking-widest uppercase mb-6" }, t.previewCV),
+            workExperience?.length > 0 && React.createElement(React.Fragment, null, React.createElement(SectionTitle, null, t.previewExp), workExperience.map(exp => React.createElement('div', { key: exp.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${exp.jobTitle}, ${exp.company}`), React.createElement('p', { className: "text-xs text-black my-2" }, exp.dateRange), React.createElement('ul', { className: "list-disc pl-5 text-xs space-y-1" }, exp.tasks.map(task => React.createElement('li', { key: task.id }, task.text)))))),
+            education?.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), education.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${edu.degree}, ${edu.schoolName}`), React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), edu.description && React.createElement('p', { className: "text-xs" }, edu.description)))),
+            React.createElement('div', { className: 'flex-grow min-h-[24px]' }),
+            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo", className: "w-24 h-auto" }))
+          )
+        )
+      );
+    };
+
+    // --- FORM ---
+    const Input = ({ label, value, onChange, placeholder = "" }) => React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, label), React.createElement('input', { type: "text", value: value, onChange: onChange, placeholder, className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" }));
+
+    const Section = ({ title, children, description, defaultOpen = false, draggable = false, onDragStart, onDragOver, onDrop, isDragging = false }) => {
+      const [isOpen, setIsOpen] = useState(defaultOpen);
+      return React.createElement('div', { className: `mb-4 border border-gray-200 rounded-lg bg-white overflow-hidden shadow-sm transition-all ${isDragging ? 'drag-ghost' : ''}`, draggable, onDragStart, onDragOver, onDrop },
+        React.createElement('div', { className: "flex items-center bg-gray-50 border-b border-gray-100" },
+          draggable && React.createElement('div', { className: "pl-3 text-gray-400 cursor-grab" }, React.createElement(DragHandleIcon, null)),
+          React.createElement('button', { onClick: () => setIsOpen(!isOpen), className: "flex-grow flex justify-between items-center p-4 hover:bg-gray-100 text-left" },
+            React.createElement('div', null, React.createElement('h3', { className: "text-lg font-bold text-gray-800" }, title), !isOpen && description && React.createElement('p', { className: "text-xs text-gray-500 mt-1 font-normal" }, description)),
+            React.createElement(ChevronIcon, { className: `w-5 h-5 text-gray-500 transform transition-transform ${isOpen ? 'rotate-180' : ''}` })
+          )
+        ),
+        isOpen && React.createElement('div', { className: "p-4 bg-gray-50/30" }, children)
+      );
+    };
+
+    const CvForm = ({ cvData, setCvData, lang, setLang }) => {
+      const t = translations[lang];
+      const [draggedItemIndex, setDraggedItemIndex] = useState(null);
+      const [isImporting, setIsImporting] = useState(false);
+      const [statusMsg, setStatusMsg] = useState(null);
+      const fileInputRef = useRef(null);
+
+      const handleImport = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsImporting(true);
+        setStatusMsg({ type: 'info', text: t.importing });
+
+        try {
+          let extractedText = '';
+
+          if (file.type === 'application/pdf') {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            for (let i = 1; i <= pdf.numPages; i++) {
+              const page = await pdf.getPage(i);
+              const textContent = await page.getTextContent();
+              extractedText += textContent.items.map(item => item.str).join(' ') + '\n';
+            }
+          } else if (file.type.startsWith('image/')) {
+            const result = await Tesseract.recognize(file, 'pol+eng');
+            extractedText = result.data.text;
+          }
+
+          if (extractedText) {
+            const parsed = parseCvText(extractedText);
+            const fmtList = (list) => list.map(text => ({ id: generateUniqueId(), text }));
+            
+            setCvData(prev => ({
+              ...prev,
+              name: parsed.name || prev.name,
+              dob: parsed.dob || prev.dob,
+              personalDetails: fmtList(parsed.personalDetails).length ? fmtList(parsed.personalDetails) : prev.personalDetails,
+              skills: fmtList(parsed.skills).length ? fmtList(parsed.skills) : prev.skills,
+              languages: fmtList(parsed.languages).length ? fmtList(parsed.languages) : prev.languages,
+              workExperience: parsed.workExperience.length ? parsed.workExperience : prev.workExperience,
+              education: parsed.education.length ? parsed.education : prev.education
+            }));
+            setStatusMsg({ type: 'success', text: t.importSuccess });
+          }
+        } catch (err) {
+          console.error(err);
+          setStatusMsg({ type: 'error', text: t.importError });
+        } finally {
+          setIsImporting(false);
+          setTimeout(() => setStatusMsg(null), 3000);
+        }
+      };
+
+      const handleImageUpload = (event) => {
+        const file = event.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => setCvData(prev => ({ ...prev, profilePictureUrl: reader.result, imagePosition: { x: 50, y: 50 } }));
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleDynamicChange = (section, itemId, field, value) => {
+        const newItems = cvData[section].map(item => item.id === itemId ? { ...item, [field]: value } : item);
+        setCvData(prev => ({ ...prev, [section]: newItems }));
+      };
+
+      const addItem = (section) => {
+        let newItem = { id: generateUniqueId(), text: '' };
+        if (section === 'workExperience') newItem = { id: generateUniqueId(), jobTitle: '', company: '', dateRange: '', tasks: [{ id: generateUniqueId(), text: '' }] };
+        if (section === 'education') newItem = { id: generateUniqueId(), degree: '', schoolName: '', dateRange: '', description: '' };
+        setCvData(prev => ({ ...prev, [section]: [...prev[section], newItem] }));
+      };
+
+      return React.createElement('div', { id: "cv-form-container", className: "p-6 bg-white shadow-xl h-full overflow-y-auto w-full md:w-1/2 lg:w-2/5" },
+        React.createElement('div', { className: "flex justify-between items-center mb-6" },
+            React.createElement('h2', { className: "text-2xl font-bold text-red-700" }, t.editorTitle),
+            React.createElement('div', { className: "flex gap-2" },
+                ['pl', 'en'].map(l => React.createElement('button', { key: l, onClick: () => setLang(l), className: `px-3 py-1 text-sm font-medium rounded transition border ${lang === l ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}` }, l.toUpperCase()))
+            )
+        ),
+        // IMPORT SECTION (OFFLINE)
+        React.createElement('div', { className: "mb-6 p-4 border-2 border-dashed border-red-200 rounded-lg bg-red-50/30" },
+            React.createElement('h3', { className: "text-sm font-bold text-gray-700 mb-2" }, t.importTitle),
+            React.createElement('input', { type: "file", ref: fileInputRef, onChange: handleImport, accept: "application/pdf,image/*", className: "hidden" }),
+            React.createElement('button', { 
+                onClick: () => fileInputRef.current.click(),
+                disabled: isImporting,
+                className: `w-full flex items-center justify-center gap-2 bg-white border border-red-500 text-red-600 py-2 rounded-md transition font-medium ${isImporting ? 'loading-pulse cursor-not-allowed opacity-70' : ''}`
+            }, React.createElement(UploadIcon, null), isImporting ? t.importing : t.importBtn),
+            statusMsg && React.createElement('p', { className: `text-xs mt-2 font-semibold ${statusMsg.type === 'error' ? 'text-red-500' : 'text-green-600'}` }, statusMsg.text)
+        ),
+        React.createElement(Section, { title: t.basicInfo, defaultOpen: true },
+          React.createElement(Input, { label: t.fullName, value: cvData.name, onChange: (e) => handleFieldChange('name', e.target.value) }),
+          React.createElement(Input, { label: t.dob, value: cvData.dob, onChange: (e) => handleFieldChange('dob', e.target.value) }),
+          React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.profilePic), React.createElement('input', { type: "file", onChange: handleImageUpload, accept: "image/*", className: "w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-red-50 file:text-red-700 hover:file:bg-red-100" }))
+        ),
+        React.createElement(Section, { title: t.workExp, description: t.workExpDesc, defaultOpen: true },
+          cvData.workExperience.map((work, index) => React.createElement(Section, { 
+              key: work.id, title: work.jobTitle || t.newWorkExp, defaultOpen: index === 0, draggable: true, isDragging: draggedItemIndex === index,
+              onDragStart: () => setDraggedItemIndex(index), onDragOver: (e) => e.preventDefault(),
+              onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== index) {
+                const updated = [...cvData.workExperience]; const [moved] = updated.splice(draggedItemIndex, 1); updated.splice(index, 0, moved); setCvData(p => ({ ...p, workExperience: updated }));
+              } setDraggedItemIndex(null); }
+            },
+            React.createElement(Input, { label: t.jobTitle, value: work.jobTitle, onChange: (e) => handleDynamicChange('workExperience', work.id, 'jobTitle', e.target.value) }),
+            React.createElement(Input, { label: t.company, value: work.company, onChange: (e) => handleDynamicChange('workExperience', work.id, 'company', e.target.value) }),
+            React.createElement(Input, { label: t.period, value: work.dateRange, onChange: (e) => handleDynamicChange('workExperience', work.id, 'dateRange', e.target.value) }),
+            React.createElement('div', { className: "mb-3" },
+              React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.responsibilities),
+              work.tasks.map(task => React.createElement('div', { key: task.id, className: "flex items-center gap-2 mb-2" },
+                React.createElement('input', { type: "text", value: task.text, onChange: (e) => { const newTasks = work.tasks.map(tk => tk.id === task.id ? {...tk, text: e.target.value} : tk); const newExp = cvData.workExperience.map(w => w.id === work.id ? {...w, tasks: newTasks} : w); setCvData(p => ({...p, workExperience: newExp})); }, className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
+                React.createElement('button', { onClick: () => { const newExp = cvData.workExperience.map(w => w.id === work.id ? { ...w, tasks: w.tasks.filter(tk => tk.id !== task.id) } : w); setCvData(p => ({ ...p, workExperience: newExp })); }, className: "text-red-500" }, "×")
+              )),
+              React.createElement('button', { onClick: () => { const newExp = cvData.workExperience.map(w => w.id === work.id ? { ...w, tasks: [...w.tasks, { id: generateUniqueId(), text: '' }] } : w); setCvData(p => ({ ...p, workExperience: newExp })); }, className: "text-xs text-blue-600 hover:underline" }, t.addDuty)
+            ),
+            React.createElement('button', { onClick: () => setCvData(p => ({ ...p, workExperience: p.workExperience.filter(w => w.id !== work.id) })), className: "mt-4 text-xs text-red-600 hover:underline" }, t.removeWorkExp)
+          )),
+          React.createElement('button', { onClick: () => addItem('workExperience'), className: "mt-4 w-full py-2 border border-red-500 text-red-600 rounded-md font-medium hover:bg-red-50 transition" }, t.addWorkExp)
+        ),
+        ['personalDetails', 'languages', 'skills'].map(s => React.createElement(Section, { key: s, title: translations[lang][`section${s.charAt(0).toUpperCase() + s.slice(1)}`], defaultOpen: false },
+          cvData[s].map(item => React.createElement('div', { key: item.id, className: "flex items-center gap-2 mb-2" },
+            React.createElement('input', { type: "text", value: item.text, onChange: (e) => handleDynamicChange(s, item.id, 'text', e.target.value), className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
+            React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [s]: p[s].filter(i => i.id !== item.id) })), className: "text-red-500" }, "×")
+          )),
+          React.createElement('button', { onClick: () => addItem(s), className: "mt-2 text-xs text-blue-600 hover:underline" }, "+ Dodaj")
+        )),
+        React.createElement('div', { className: "mt-8 sticky bottom-0 bg-white pt-4 pb-4 border-t" },
+          React.createElement('button', { onClick: () => generatePdf('cv-document'), className: "w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition shadow-md" }, t.downloadPdf)
+        )
+      );
+    };
+    
+    // --- MAIN APP ---
+    const defaultData = {
+      name: 'Jan Kowalski', dob: '01.01.1990', profilePictureUrl: 'https://placehold.co/180x180/E31D2A/ffffff?text=ZDJĘCIE', imagePosition: { x: 50, y: 50 },
+      personalDetails: [{ id: generateUniqueId(), text: 'Prawo jazdy kat. B' }],
+      skills: [{ id: generateUniqueId(), text: 'Obsługa pakowarki automatycznej' }],
+      languages: [{ id: generateUniqueId(), text: 'Angielski - B1' }],
+      workExperience: [{ id: generateUniqueId(), jobTitle: 'Pracownik Produkcji', company: 'Fabryka Mebli', dateRange: '03.2020 - obecnie', tasks: [{ id: generateUniqueId(), text: 'Obsługa maszyn' }] }],
+      education: [{ id: generateUniqueId(), degree: 'Technik Logistyk', schoolName: 'Technikum nr 1', dateRange: '2014-2018', description: '' }]
+    };
+    
+    const App = () => {
+      const [cvData, setCvData] = useState(defaultData);
+      const [view, setView] = useState('form'); 
+      const [lang, setLang] = useState('pl');
+      const [zoomLevel, setZoomLevel] = useState(1);
+
+      const handleShare = async (platform) => {
+        try {
+            const blob = await createPdf('cv-document', 'blob');
+            const file = new File([blob], 'cv.pdf', { type: 'application/pdf' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'CV', text: 'CV' }); }
+            else { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'cv.pdf'; a.click(); }
+        } catch (e) { console.error(e); }
+      };
+
+      return React.createElement('div', { className: `min-h-screen flex flex-col md:flex-row ${view === 'form' ? 'mobile-view-form' : 'mobile-view-preview'}` },
+        React.createElement('div', { className: "md:hidden bg-white p-4 border-b flex justify-around sticky top-0 z-10 shadow-sm" },
+            React.createElement('button', { onClick: () => setView('form'), className: `px-4 py-2 text-sm font-medium rounded-lg ${view === 'form' ? 'bg-red-600 text-white' : 'text-gray-600'}` }, "Edytor"),
+            React.createElement('button', { onClick: () => setView('preview'), className: `px-4 py-2 text-sm font-medium rounded-lg ${view === 'preview' ? 'bg-red-600 text-white' : 'text-gray-600'}` }, "Podgląd")
+        ),
+        React.createElement(CvForm, { cvData, setCvData, lang, setLang }),
+        React.createElement('div', { id: "cv-preview-container", className: "bg-gray-100 flex-grow w-full md:w-1/2 lg:w-3/5 overflow-auto flex flex-col" },
+            React.createElement('div', { className: "sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b p-3 flex justify-end gap-2 shadow-sm" },
+                React.createElement('button', { onClick: () => handleShare('whatsapp'), className: "flex items-center gap-2 bg-[#25D366] text-white px-3 py-2 rounded text-xs transition" }, React.createElement(MessageIcon, { className: "w-4 h-4" }), "WhatsApp"),
+                React.createElement('button', { onClick: () => handleShare('email'), className: "flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded text-xs transition" }, React.createElement(MailIcon, { className: "w-4 h-4" }), "Email"),
+                React.createElement('button', { onClick: () => generatePdf('cv-document'), className: "flex items-center gap-2 bg-[#E31D2A] text-white px-3 py-2 rounded text-xs transition" }, React.createElement(DownloadIcon, { className: "w-4 h-4" }), "Pobierz PDF")
+            ),
+            React.createElement('div', { className: "p-6 md:p-10 flex justify-center min-w-fit", style: { zoom: zoomLevel } },
+                 React.createElement(CvPreview, { cvData, id: "cv-document", className: "w-[210mm] h-auto min-h-fit", onImagePositionChange: (p) => setCvData(prev => ({ ...prev, imagePosition: p })), lang })
+            )
+        )
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode, null, React.createElement(App)));
+  </script>
+</body>
+</html>
