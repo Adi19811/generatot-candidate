@@ -204,7 +204,10 @@
         assignSkills: "Umiejętności (Lista)",
         assignLangs: "Języki (Lista)",
         assignQuals: "Uprawnienia (Lista)",
-        selectionEmpty: "Najpierw zaznacz tekst w polu po lewej!"
+        selectionEmpty: "Najpierw zaznacz tekst w polu po lewej!",
+        moveLabel: "PRZESUŃ",
+        moveUp: "Przesuń w górę",
+        moveDown: "Przesuń w dół"
       },
       en: {
         editorTitle: "CV Editor",
@@ -260,7 +263,10 @@
         assignSkills: "Skills (List)",
         assignLangs: "Languages (List)",
         assignQuals: "Qualifications (List)",
-        selectionEmpty: "Select text in the left box first!"
+        selectionEmpty: "Select text in the left box first!",
+        moveLabel: "MOVE",
+        moveUp: "Move up",
+        moveDown: "Move down"
       }
     };
 
@@ -324,6 +330,8 @@
     const DragHandleIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('circle', { cx: "9", cy: "5", r: "1" }), React.createElement('circle', { cx: "9", cy: "12", r: "1" }), React.createElement('circle', { cx: "9", cy: "19", r: "1" }), React.createElement('circle', { cx: "15", cy: "5", r: "1" }), React.createElement('circle', { cx: "15", cy: "12", r: "1" }), React.createElement('circle', { cx: "15", cy: "19", r: "1" }));
     const UploadIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement('polyline', { points: "17 8 12 3 7 8" }), React.createElement('line', { x1: "12", y1: "3", x2: "12", y2: "15" }));
     const PlusIcon = ({className}) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className }, React.createElement('line', { x1: "12", y1: "5", x2: "12", y2: "19" }), React.createElement('line', { x1: "5", y1: "12", x2: "19", y2: "12" }));
+    const ArrowUpIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('polyline', { points: "18 15 12 9 6 15" }));
+    const ArrowDownIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('polyline', { points: "6 9 12 15 18 9" }));
 
     // --- COMPONENTS ---
     const SectionTitle = ({ children }) => React.createElement('h2', { className: "text-[#E31D2A] text-lg tracking-[0.3em] font-semibold mb-6 uppercase" }, children);
@@ -378,11 +386,28 @@
       );
     };
 
-    const Section = ({ title, children, description, defaultOpen = false, draggable = false, onDragStart, onDragOver, onDrop, isDragging = false }) => {
+    const Section = ({ title, children, description, defaultOpen = false, draggable = false, onDragStart, onDragOver, onDrop, isDragging = false, onMoveUp, onMoveDown, moveText, moveUpTitle, moveDownTitle }) => {
       const [isOpen, setIsOpen] = useState(defaultOpen);
       return React.createElement('div', { className: `mb-4 border border-gray-200 rounded-lg bg-white overflow-hidden shadow-sm transition-all ${isDragging ? 'drag-ghost' : ''}`, draggable, onDragStart, onDragOver, onDrop },
         React.createElement('div', { className: "flex items-center bg-gray-50 border-b border-gray-100" },
-          draggable && React.createElement('div', { className: "pl-3 text-gray-400 cursor-grab active:cursor-grabbing" }, React.createElement(DragHandleIcon, null)),
+          draggable && React.createElement('div', { className: "pl-2 flex items-center text-gray-400" },
+             React.createElement('div', { className: "cursor-grab active:cursor-grabbing p-2", title: "Chwyć, aby przeciągnąć" }, React.createElement(DragHandleIcon, null)),
+             (onMoveUp || onMoveDown) && React.createElement('div', { className: "flex flex-col mr-1 items-center group" },
+                React.createElement('button', { 
+                    onClick: (e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }, 
+                    disabled: !onMoveUp,
+                    title: moveUpTitle || "Przesuń w górę",
+                    className: `p-0.5 leading-none ${onMoveUp ? 'hover:text-red-600 text-gray-500' : 'text-gray-200 cursor-default'}` 
+                }, React.createElement(ArrowUpIcon, { width: 14, height: 14 })),
+                moveText && React.createElement('span', { className: "text-[9px] font-bold text-gray-600 uppercase leading-none select-none tracking-wider my-0.5" }, moveText),
+                React.createElement('button', { 
+                    onClick: (e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }, 
+                    disabled: !onMoveDown,
+                    title: moveDownTitle || "Przesuń w dół",
+                    className: `p-0.5 leading-none ${onMoveDown ? 'hover:text-red-600 text-gray-500' : 'text-gray-200 cursor-default'}` 
+                }, React.createElement(ArrowDownIcon, { width: 14, height: 14 }))
+             )
+          ),
           React.createElement('button', { onClick: () => setIsOpen(!isOpen), className: "flex-grow flex justify-between items-center p-4 hover:bg-gray-100 text-left" },
             React.createElement('div', null, React.createElement('h3', { className: "text-lg font-bold text-gray-800 leading-none" }, title), description && React.createElement('p', { className: "text-[10px] text-gray-500 mt-1 font-normal" }, description)),
             React.createElement(ChevronIcon, { className: `w-5 h-5 text-gray-500 transform transition-transform ${isOpen ? 'rotate-180' : ''}` })
@@ -411,6 +436,15 @@
         const updated = [...cvData.workExperience];
         const [movedItem] = updated.splice(fromIndex, 1);
         updated.splice(toIndex, 0, movedItem);
+        setCvData(prev => ({ ...prev, workExperience: updated }));
+      };
+      
+      const shiftExperience = (index, direction) => {
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= cvData.workExperience.length) return;
+        const updated = [...cvData.workExperience];
+        const [movedItem] = updated.splice(index, 1);
+        updated.splice(newIndex, 0, movedItem);
         setCvData(prev => ({ ...prev, workExperience: updated }));
       };
 
@@ -647,7 +681,12 @@
           cvData.workExperience.map((work, index) => React.createElement(Section, { 
               key: work.id, title: work.company || t.newWorkExp, defaultOpen: index === 0, draggable: true, isDragging: draggedItemIndex === index,
               onDragStart: () => setDraggedItemIndex(index), onDragOver: (e) => e.preventDefault(),
-              onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== index) { moveWorkExperience(draggedItemIndex, index); } setDraggedItemIndex(null); }
+              onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== index) { moveWorkExperience(draggedItemIndex, index); } setDraggedItemIndex(null); },
+              onMoveUp: index > 0 ? () => shiftExperience(index, -1) : null,
+              onMoveDown: index < cvData.workExperience.length - 1 ? () => shiftExperience(index, 1) : null,
+              moveText: t.moveLabel,
+              moveUpTitle: t.moveUp,
+              moveDownTitle: t.moveDown
             },
             React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.company), React.createElement('input', { type: "text", value: work.company, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, company: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm font-bold" })),
             React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.jobTitle), React.createElement('input', { type: "text", value: work.jobTitle, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, jobTitle: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
