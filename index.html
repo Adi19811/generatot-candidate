@@ -11,9 +11,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <!-- Biblioteki do obsługi plików lokalnie -->
+  
+  <!-- Biblioteki do obsługi PDF i OCR (Obrazki) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  
   <style>
     body { font-family: 'Poppins', sans-serif; touch-action: pan-x pan-y; }
     ::-webkit-scrollbar { width: 8px; }
@@ -30,6 +32,18 @@
       50% { opacity: 0.5; }
     }
     .loading-pulse { animation: pulse-red 2s infinite; }
+    /* Styl dla zaznaczenia */
+    ::selection { background: #fee2e2; color: #991b1b; }
+    
+    /* Styl dla edytora rich-text */
+    .rich-editor b, .rich-editor strong {
+        font-weight: 700;
+        color: #000;
+        background-color: #fef3c7; /* Delikatne podświetlenie pogrubień */
+    }
+    .rich-editor {
+        white-space: pre-wrap; /* Zachowaj formatowanie białych znaków */
+    }
   </style>
 <script type="importmap">
 {
@@ -48,124 +62,85 @@
     import React, { useState, useEffect, useRef } from 'react';
     import ReactDOM from 'react-dom/client';
 
+    // Konfiguracja workera PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
     // --- UTILS ---
-    const generateUniqueId = () => new Date().getTime().toString() + Math.random().toString(36).substring(2, 9);
+    const generateUniqueId = () => crypto.randomUUID();
 
-    const parseCvText = (text) => {
-      const allLines = text.split('\n').map(l => l.trim());
-      const data = { name: '', dob: '', personalDetails: [], skills: [], languages: [], workExperience: [], education: [] };
-      let activeSection = null;
-      let sectionFound = { name: false, work: false, edu: false, skills: false, lang: false, qual: false };
-      let hadBreak = false;
+    // --- LOGIKA PARSOWANIA ---
+    const parseImportText = (rawText) => {
+        const result = {
+            workExperience: [],
+            education: [],
+            personalDetails: [],
+            skills: [],
+            languages: []
+        };
+        const cleanLines = rawText.split('\n')
+            .map(l => l.trim())
+            .filter(l => l.length > 0)
+            .filter(l => !l.includes('@'))
+            .filter(l => !/^\d{15,}$/.test(l)); 
 
-      const sectionKeywords = {
-        work: ['doświadczenie', 'zatrudnien', 'historia zawodowa', 'experience', 'employment', 'work history', 'przebieg pracy', 'professional experience'],
-        edu: ['edukacja', 'wykształcenie', 'szkoł', 'education', 'academic', 'studia'],
-        skills: ['umiejętności', 'kompetencje', 'skills', 'abilities', 'potrafię'],
-        lang: ['język', 'languages', 'znajomość języków'],
-        qual: ['uprawnienia', 'kwalifikacje', 'prawo jazdy', 'certifica', 'licenses', 'courses', 'kursy', 'certyfikaty']
-      };
-
-      allLines.forEach((line, index) => {
-        if (!line) {
-          hadBreak = true;
-          return;
-        }
+        const fullText = cleanLines.join('\n');
         
-        const l = line.toLowerCase();
-        
-        // 1. Imię i Nazwisko (tylko na początku)
-        if (!sectionFound.name && (l.includes('imię i nazwisko') || l.includes('imie i nazwisko') || l.startsWith('name') || l.includes('full name'))) {
-          sectionFound.name = true;
-          if (line.includes(':')) data.name = line.split(':')[1].trim();
-          else if (allLines[index + 1]) data.name = allLines[index + 1];
-          hadBreak = false;
-          return;
-        }
+        const keywords = {
+            work: ['DOŚWIADCZENIE', 'ZAWODOWE', 'EXPERIENCE', 'WORK', 'ZATRUDNIENIE'],
+            edu: ['EDUKACJA', 'WYKSZTAŁCENIE', 'EDUCATION', 'SZKOŁY'],
+            skills: ['UPRAWNIENIA', 'UMIEJĘTNOŚCI', 'SKILLS', 'QUALIFICATIONS', 'CERTYFIKATY'],
+            lang: ['JĘZYKI', 'LANGUAGES', 'ZNAJOMOŚĆ JĘZYKÓW']
+        };
 
-        // 2. Detekcja Sekcji (nagłówki)
-        let foundNewHeader = false;
-        for (const [section, keywords] of Object.entries(sectionKeywords)) {
-          if (keywords.some(k => l.includes(k)) && line.length < 40) {
-              activeSection = section;
-              sectionFound[section] = true;
-              foundNewHeader = true;
-              hadBreak = false;
-              break;
-          }
-        }
-        if (foundNewHeader) return;
-
-        // 3. Przyporządkowanie treści na podstawie aktywnego nagłówka
-        // Dodany filtr: nie dodajemy linii, które są samymi cyframi lub są puste
-        const isNoise = line.length <= 1 || /^\d+$/.test(line.replace(/\s/g, ''));
-
-        if (activeSection === 'skills' && sectionFound.skills) {
-           if (!isNoise) data.skills.push(line);
-        }
-        else if (activeSection === 'lang' && sectionFound.lang) {
-           if (!isNoise) data.languages.push(line);
-        }
-        else if (activeSection === 'qual' && sectionFound.qual) {
-           if (!isNoise) data.personalDetails.push(line);
-        }
-        else if (activeSection === 'work' && sectionFound.work) {
-          const isBullet = /^[•\-*]/.test(line);
-          const hasDate = /\d{2}[./-]\d{4}|\d{4}/.test(line);
-
-          const shouldStartNew = (hasDate && !isBullet) || 
-                                (hadBreak && !isBullet && data.workExperience.length > 0) || 
-                                (data.workExperience.length === 0);
-
-          if (shouldStartNew) {
-             const cleanLine = line.replace(/\d{2}[./-]\d{4}|\d{4}/g, '').replace(/^[•\-*]\s*/, '').trim();
-             const foundDate = line.match(/\d{2}[./-]\d{4}|\d{4}/g)?.join(' - ');
-
-             data.workExperience.push({
-               id: generateUniqueId(),
-               company: cleanLine || 'Firma', 
-               jobTitle: 'Stanowisko', 
-               dateRange: foundDate || 'Okres',
-               tasks: [] 
-             });
-          } else if (data.workExperience.length > 0) {
-             const lastWork = data.workExperience[data.workExperience.length - 1];
-             if (!isNoise) lastWork.tasks.push({ id: generateUniqueId(), text: line.replace(/^[•\-*]\s*/, '') });
-          }
-        } else if (activeSection === 'edu' && sectionFound.edu) {
-          const hasDate = /\d{4}/.test(line);
-          if (hasDate || data.education.length === 0 || hadBreak) {
-            const cleanEdu = line.replace(/\d{4}/g, '').trim();
-            const parts = cleanEdu.split(/[,-]/).map(s => s.trim()).filter(s => s.length > 1);
-            if (parts.length > 0) {
-                data.education.push({ 
-                  id: generateUniqueId(), 
-                  schoolName: parts[0] || 'Szkoła', 
-                  degree: parts[1] || 'Stopień', 
-                  dateRange: line.match(/\d{4}/g)?.join(' - ') || 'Okres', 
-                  description: '' 
-                });
+        const getSectionText = (sectionKeys) => {
+            let startIdx = -1;
+            let matchedKey = "";
+            const lowerText = fullText.toLowerCase();
+            for (const key of sectionKeys) {
+                const idx = lowerText.indexOf(key.toLowerCase());
+                if (idx !== -1 && (startIdx === -1 || idx < startIdx)) {
+                    startIdx = idx;
+                    matchedKey = key;
+                }
             }
-          }
+            if (startIdx === -1) return null;
+            const contentStart = startIdx + matchedKey.length;
+            let endIdx = fullText.length;
+            const allKeywords = Object.values(keywords).flat();
+            allKeywords.forEach(k => {
+                const kIdx = lowerText.indexOf(k.toLowerCase(), contentStart);
+                if (kIdx !== -1 && kIdx < endIdx) {
+                    endIdx = kIdx;
+                }
+            });
+            return fullText.substring(contentStart, endIdx).trim();
+        };
+
+        const workText = getSectionText(keywords.work);
+        if (workText) {
+            const lines = workText.split('\n').map(l => l.trim()).filter(l => l);
+            const dateRegex = /(\d{4}|obecnie|present|now|\d{2}\.\d{4})/i;
+            let currentExp = null;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (dateRegex.test(line) && line.length < 50) {
+                    if (currentExp) result.workExperience.push(currentExp);
+                    const companyLine = lines[i + 1] ? lines[i + 1] : "Firma / Stanowisko";
+                    currentExp = {
+                        id: generateUniqueId(),
+                        dateRange: line,
+                        company: companyLine,
+                        jobTitle: "Stanowisko",
+                        tasks: []
+                    };
+                    i++; 
+                } else if (currentExp) {
+                    currentExp.tasks.push({ id: generateUniqueId(), text: line.replace(/^[•\-\*]\s*/, '') });
+                }
+            }
+            if (currentExp) result.workExperience.push(currentExp);
         }
-
-        if (!data.dob) {
-          const dobMatch = line.match(/(\d{2}[.\/-]\d{2}[.\/-]\d{4})|(\d{4}[.\/-]\d{2}[.\/-]\d{2})/);
-          if (dobMatch) data.dob = dobMatch[0];
-        }
-        
-        hadBreak = false; 
-      });
-
-      // Zabezpieczenie przed samymi cyferkami w nazwie firmy
-      data.workExperience.forEach(work => {
-          if (work.tasks.length === 0) work.tasks.push({ id: generateUniqueId(), text: 'Obowiązek...' });
-          if (/^\d+$/.test(work.company.replace(/\s/g, ''))) work.company = 'Firma';
-      });
-
-      return { data, sectionFound };
+        return result;
     };
 
     const translations = {
@@ -176,7 +151,7 @@
         dob: "Data urodzenia",
         profilePic: "Zdjęcie Profilowe",
         workExp: "Doświadczenie Zawodowe",
-        workExpDesc: "Mapowanie treści wyłącznie na podstawie nagłówków dokumentu",
+        workExpDesc: "Mapowanie treści wyłącznie na podstawie nagłówków dokumentu. Firma jest pogrubiona.",
         addWorkExp: " + Dodaj nowe doświadczenie",
         jobTitle: "Stanowisko",
         company: "Firma",
@@ -208,12 +183,22 @@
         sectionQual: "Uprawnienia",
         sectionLang: "Znajomość Języków Obcych",
         sectionSkills: "Dodatkowe Umiejętności",
-        importTitle: "Skanuj dokument (Offline)",
-        importBtn: "Wczytaj plik (PDF/JPG)",
-        importing: "Przetwarzanie dokumentu...",
-        importSuccess: "Dokument przeanalizowany!",
-        importError: "Błąd odczytu pliku.",
-        listDesc: "Edytuj listę poniżej"
+        listDesc: "Edytuj listę poniżej",
+        importBtn: "Zczytaj swoje CV",
+        importPlaceholder: "Wczytaj plik (PDF lub zdjęcie), aby zobaczyć tekst. Zaznacz fragment i przypisz go przyciskami po prawej.",
+        importIntro: "Zaznacz tekst, który chcesz przenieść do szablonu i wybierz kategorię.",
+        importOutro: "Poniżej uzupełnisz nowe pozycje, które nie były w Twoim CV.",
+        closeBtn: "Zamknij",
+        loadFileBtn: "Wczytaj plik",
+        importing: "Przetwarzanie...",
+        assignTo: "Przypisz zaznaczenie do:",
+        assignName: "Imię i Nazwisko",
+        assignWork: "Nowe Doświadczenie",
+        assignEdu: "Nowa Edukacja",
+        assignSkills: "Umiejętności (Lista)",
+        assignLangs: "Języki (Lista)",
+        assignQuals: "Uprawnienia (Lista)",
+        selectionEmpty: "Najpierw zaznacz tekst w polu po lewej!"
       },
       en: {
         editorTitle: "CV Editor",
@@ -222,7 +207,7 @@
         dob: "Date of Birth",
         profilePic: "Profile Picture",
         workExp: "Work Experience",
-        workExpDesc: "Mapping content strictly based on document headers",
+        workExpDesc: "Mapping content strictly based on document headers. Company is bold.",
         addWorkExp: " + Add new experience",
         jobTitle: "Job Title",
         company: "Company",
@@ -254,12 +239,22 @@
         sectionQual: "Qualifications",
         sectionLang: "Languages",
         sectionSkills: "Additional Skills",
-        importTitle: "Scan document (Offline)",
-        importBtn: "Load file (PDF/JPG)",
-        importing: "Processing document...",
-        importSuccess: "Document parsed!",
-        importError: "File read error.",
-        listDesc: "Edit list below"
+        listDesc: "Edit list below",
+        importBtn: "Read your CV",
+        importPlaceholder: "Load file (PDF or Image) to see text. Select text and assign it using buttons on the right.",
+        importIntro: "Highlight the text you want to transfer to the template and select a category.",
+        importOutro: "Below, you can complete new items that were not in your CV.",
+        closeBtn: "Close",
+        loadFileBtn: "Load file",
+        importing: "Processing...",
+        assignTo: "Assign selection to:",
+        assignName: "Full Name",
+        assignWork: "New Experience",
+        assignEdu: "New Education",
+        assignSkills: "Skills (List)",
+        assignLangs: "Languages (List)",
+        assignQuals: "Qualifications (List)",
+        selectionEmpty: "Select text in the left box first!"
       }
     };
 
@@ -277,45 +272,52 @@
       if (logoWrapper) {
           const img = logoWrapper.querySelector('img');
           if (img) {
-             try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-                canvas.getContext('2d').drawImage(img, 0, 0);
-                logoDataUrl = canvas.toDataURL('image/png');
-             } catch (e) {}
+              try {
+                 if (img.complete && img.naturalHeight !== 0) {
+                     const canvas = document.createElement('canvas');
+                     canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+                     canvas.getContext('2d').drawImage(img, 0, 0);
+                     logoDataUrl = canvas.toDataURL('image/png');
+                 }
+              } catch (e) { console.warn("Błąd przetwarzania logo", e); }
           }
           logoWrapper.style.display = 'none';
       }
       document.body.appendChild(clone);
       
       try {
-        const scale = 3;
-        const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY, allowTaint: true });
+        const scale = 2;
+        const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY });
+        
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const pxPerMm = canvas.width / 210;
         let startY = 0;
+        
         while (startY < canvas.height) {
           if (startY > 0) pdf.addPage();
-          const pageHeightPx = 297 * pxPerMm;
+          const pageHeightPx = Math.min(canvas.height - startY, 297 * pxPerMm);
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = canvas.width; tempCanvas.height = Math.min(pageHeightPx, canvas.height - startY);
-          tempCanvas.getContext('2d').drawImage(canvas, 0, startY, canvas.width, tempCanvas.height, 0, 0, canvas.width, tempCanvas.height);
-          pdf.addImage(tempCanvas.toDataURL('image/png'), 'PNG', 0, 0, 210, tempCanvas.height / pxPerMm);
-          if (logoDataUrl) pdf.addImage(logoDataUrl, 'PNG', 210 - 34, 297 - 25, 24, 15);
+          tempCanvas.width = canvas.width; tempCanvas.height = pageHeightPx;
+          const ctx = tempCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff'; 
+          ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+          ctx.drawImage(canvas, 0, startY, canvas.width, pageHeightPx, 0, 0, canvas.width, pageHeightPx);
+          const imgData = tempCanvas.toDataURL('image/jpeg', 0.95);
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, pageHeightPx / pxPerMm);
+          if (logoDataUrl) { try { pdf.addImage(logoDataUrl, 'PNG', 210 - 34, 297 - 25, 24, 15); } catch (e) {} }
           startY += pageHeightPx;
         }
         pdf.save('cv.pdf');
-      } finally { document.body.removeChild(clone); }
+      } catch (err) { console.error(err); alert("Błąd PDF."); } finally { document.body.removeChild(clone); }
     };
 
     // --- ICONS ---
     const ChevronIcon = ({ className }) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className }, React.createElement('polyline', { points: "6 9 12 15 18 9" }));
     const DownloadIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement('polyline', { points: "7 10 12 15 17 10" }), React.createElement('line', { x1: "12", y1: "15", x2: "12", y2: "3" }));
-    const MailIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('rect', { width: "20", height: "16", x: "2", y: "4", rx: "2" }), React.createElement('path', { d: "m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" }));
-    const MessageIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" }));
     const DragHandleIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('circle', { cx: "9", cy: "5", r: "1" }), React.createElement('circle', { cx: "9", cy: "12", r: "1" }), React.createElement('circle', { cx: "9", cy: "19", r: "1" }), React.createElement('circle', { cx: "15", cy: "5", r: "1" }), React.createElement('circle', { cx: "15", cy: "12", r: "1" }), React.createElement('circle', { cx: "15", cy: "19", r: "1" }));
     const UploadIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement('polyline', { points: "17 8 12 3 7 8" }), React.createElement('line', { x1: "12", y1: "3", x2: "12", y2: "15" }));
+    const PlusIcon = ({className}) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className }, React.createElement('line', { x1: "12", y1: "5", x2: "12", y2: "19" }), React.createElement('line', { x1: "5", y1: "12", x2: "19", y2: "12" }));
 
     // --- COMPONENTS ---
     const SectionTitle = ({ children }) => React.createElement('h2', { className: "text-[#E31D2A] text-lg tracking-[0.3em] font-semibold mb-6 uppercase" }, children);
@@ -387,9 +389,17 @@
     const CvForm = ({ cvData, setCvData, lang, setLang }) => {
       const t = translations[lang];
       const [draggedItemIndex, setDraggedItemIndex] = useState(null);
-      const [isImporting, setIsImporting] = useState(false);
-      const [statusMsg, setStatusMsg] = useState(null);
+      const [showImport, setShowImport] = useState(false);
+      const [importHtml, setImportHtml] = useState(""); // State for HTML content
+      const [isReading, setIsReading] = useState(false);
       const fileInputRef = useRef(null);
+      const editorRef = useRef(null); // Ref for contentEditable div
+      const [toast, setToast] = useState(null);
+
+      const showToast = (msg) => {
+          setToast(msg);
+          setTimeout(() => setToast(null), 2000);
+      };
 
       const moveWorkExperience = (fromIndex, toIndex) => {
         const updated = [...cvData.workExperience];
@@ -398,42 +408,230 @@
         setCvData(prev => ({ ...prev, workExperience: updated }));
       };
 
-      const handleImport = async (e) => {
-        const file = e.target.files?.[0]; if (!file) return;
-        setIsImporting(true); setStatusMsg({ type: 'info', text: t.importing });
-        try {
-          let extractedText = '';
-          if (file.type === 'application/pdf') {
-            const ab = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
-            for (let i = 1; i <= pdf.numPages; i++) {
-              const page = await pdf.getPage(i); const tc = await page.getTextContent();
-              const lines_map = {}; tc.items.forEach(item => { const y = Math.round(item.transform[5]); if (!lines_map[y]) lines_map[y] = []; lines_map[y].push(item); });
-              const sortedY = Object.keys(lines_map).sort((a, b) => b - a);
-              sortedY.forEach(y => { const line_items = lines_map[y].sort((a, b) => a.transform[4] - b.transform[4]); extractedText += line_items.map(it => it.str).join(' ') + '\n'; });
-            }
-          } else if (file.type.startsWith('image/')) { const res = await Tesseract.recognize(file, 'pol+eng'); extractedText = res.data.text; }
-          if (extractedText) {
-            const { data: p, sectionFound } = parseCvText(extractedText);
-            const fmt = (list) => list.map(text => ({ id: generateUniqueId(), text }));
-            setCvData({
-              name: sectionFound.name ? p.name : '', dob: p.dob || '', profilePictureUrl: defaultData.profilePictureUrl, imagePosition: { x: 50, y: 50 },
-              personalDetails: sectionFound.qual ? fmt(p.personalDetails) : [], skills: sectionFound.skills ? fmt(p.skills) : [], languages: sectionFound.lang ? fmt(p.languages) : [],
-              workExperience: sectionFound.work ? p.workExperience : [], education: sectionFound.edu ? p.education : []
-            });
-            setStatusMsg({ type: 'success', text: t.importSuccess });
+      const handleAssignSelection = (type) => {
+          // Use window.getSelection() for contentEditable
+          const selection = window.getSelection();
+          if (!selection.rangeCount) return;
+          
+          // Ensure selection is inside our editor
+          if (editorRef.current && !editorRef.current.contains(selection.anchorNode)) {
+               alert(t.selectionEmpty);
+               return;
           }
-        } catch (err) { setStatusMsg({ type: 'error', text: t.importError }); }
-        finally { setIsImporting(false); if (e.target) e.target.value = ''; setTimeout(() => setStatusMsg(null), 3000); }
+
+          const selectedText = selection.toString().trim();
+
+          if (!selectedText) {
+              alert(t.selectionEmpty);
+              return;
+          }
+
+          switch (type) {
+              case 'name':
+                  setCvData(prev => ({ ...prev, name: selectedText }));
+                  showToast("Przypisano imię!");
+                  break;
+              case 'work': {
+                  const lines = selectedText.split('\n');
+                  const dateRegex = /(\d{4}|obecnie|present|now|\d{2}\.\d{4})/i;
+                  const dateMatch = lines[0].match(dateRegex);
+                  const newExp = {
+                      id: generateUniqueId(),
+                      dateRange: dateMatch ? lines[0] : 'Daty do ustalenia',
+                      company: dateMatch && lines[1] ? lines[1] : (lines[0] || 'Firma'),
+                      jobTitle: 'Stanowisko',
+                      tasks: lines.slice(dateMatch ? 2 : 1).map(l => ({ id: generateUniqueId(), text: l }))
+                  };
+                  setCvData(prev => ({ ...prev, workExperience: [...prev.workExperience, newExp] }));
+                  showToast("Dodano doświadczenie!");
+                  break;
+              }
+              case 'education': {
+                  const lines = selectedText.split('\n');
+                  const dateRegex = /(\d{4})/i;
+                  const dateMatch = lines[0].match(dateRegex);
+                   const newEdu = {
+                      id: generateUniqueId(),
+                      dateRange: dateMatch ? lines[0] : 'Daty do ustalenia',
+                      schoolName: dateMatch && lines[1] ? lines[1] : (lines[0] || 'Szkoła'),
+                      degree: 'Kierunek',
+                      description: ''
+                  };
+                  setCvData(prev => ({ ...prev, education: [...prev.education, newEdu] }));
+                  showToast("Dodano edukację!");
+                  break;
+              }
+              case 'skills': 
+                  const newSkills = selectedText.split('\n').map(l => ({ id: generateUniqueId(), text: l.replace(/^[•\-\*]\s*/, '') }));
+                  setCvData(prev => ({ ...prev, skills: [...prev.skills, ...newSkills] }));
+                  showToast("Dodano umiejętności!");
+                  break;
+              case 'languages':
+                  const newLangs = selectedText.split('\n').map(l => ({ id: generateUniqueId(), text: l.replace(/^[•\-\*]\s*/, '') }));
+                  setCvData(prev => ({ ...prev, languages: [...prev.languages, ...newLangs] }));
+                   showToast("Dodano języki!");
+                  break;
+              case 'qualifications':
+                  const newQuals = selectedText.split('\n').map(l => ({ id: generateUniqueId(), text: l.replace(/^[•\-\*]\s*/, '') }));
+                  setCvData(prev => ({ ...prev, personalDetails: [...prev.personalDetails, ...newQuals] }));
+                   showToast("Dodano uprawnienia!");
+                  break;
+          }
+
+          // USUWANIE ZAZNACZENIA PO PRZYPISANIU
+          try {
+             selection.deleteFromDocument();
+          } catch(e) {
+             console.error("Błąd usuwania zaznaczenia:", e);
+          }
       };
 
-      return React.createElement('div', { id: "cv-form-container", className: "p-6 bg-white shadow-xl h-full overflow-y-auto w-full md:w-1/2 lg:w-2/5" },
-        React.createElement('div', { className: "flex justify-between items-center mb-6" }, React.createElement('h2', { className: "text-2xl font-bold text-red-700" }, t.editorTitle), React.createElement('div', { className: "flex gap-2" }, ['pl', 'en'].map(l => React.createElement('button', { key: l, onClick: () => setLang(l), className: `px-3 py-1 text-sm font-medium rounded transition border ${lang === l ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}` }, l.toUpperCase())))),
-        React.createElement('div', { className: "mb-6 p-4 border-2 border-dashed border-red-200 rounded-lg bg-red-50/30" },
-            React.createElement('h3', { className: "text-sm font-bold text-gray-700 mb-2" }, t.importTitle),
-            React.createElement('input', { type: "file", ref: fileInputRef, onChange: handleImport, accept: "application/pdf,image/*", className: "hidden" }),
-            React.createElement('button', { onClick: () => fileInputRef.current.click(), disabled: isImporting, className: `w-full flex items-center justify-center gap-2 bg-white border border-red-500 text-red-600 py-2 rounded-md transition font-medium ${isImporting ? 'loading-pulse opacity-70' : ''}` }, React.createElement(UploadIcon, null), isImporting ? t.importing : t.importBtn),
-            statusMsg && React.createElement('p', { className: `text-xs mt-2 font-semibold ${statusMsg.type === 'error' ? 'text-red-500' : 'text-green-600'}` }, statusMsg.text)
+      const handleFileRead = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsReading(true);
+        try {
+            let extractedHtml = "";
+            if (file.type === 'application/pdf') {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const styles = textContent.styles; // Metadata o czcionkach
+
+                    let lastY = null;
+                    let pageHtml = "";
+                    
+                    const items = textContent.items.sort((a, b) => {
+                        if (Math.abs(b.transform[5] - a.transform[5]) > 5) { 
+                            return b.transform[5] - a.transform[5]; 
+                        }
+                        return a.transform[4] - b.transform[4];
+                    });
+
+                    for (const item of items) {
+                        // Sprawdzanie czy czcionka jest pogrubiona
+                        let isBold = false;
+                        if (item.fontName) {
+                            if (item.fontName.toLowerCase().includes('bold') || item.fontName.toLowerCase().includes('bd')) {
+                                isBold = true;
+                            }
+                            else if (styles && styles[item.fontName]) {
+                                const fontData = styles[item.fontName];
+                                if (fontData.fontFamily && (
+                                    fontData.fontFamily.toLowerCase().includes('bold') || 
+                                    fontData.fontFamily.toLowerCase().includes('uu') || 
+                                    fontData.descent < -0.3
+                                )) {
+                                    isBold = true;
+                                }
+                            }
+                        }
+
+                        let chunk = item.str;
+                        if (isBold) {
+                            chunk = `<b>${chunk}</b>`;
+                        }
+
+                        if (lastY !== null) {
+                            const diff = Math.abs(item.transform[5] - lastY);
+                            // Większy odstęp (>20) sugeruje nowy akapit
+                            if (diff > 20) {
+                                pageHtml += "<br/><br/>";
+                            } else if (diff > 8) {
+                                pageHtml += "<br/>";
+                            } else {
+                                pageHtml += " ";
+                            }
+                        }
+                        pageHtml += chunk;
+                        lastY = item.transform[5];
+                    }
+                    extractedHtml += pageHtml + "<br/><br/>";
+                }
+            } else if (file.type.startsWith('image/')) {
+                 const { data: { text } } = await Tesseract.recognize(file, 'pol+eng');
+                 // Zamiana podwójnych nowych linii na odstęp
+                 extractedHtml = text.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
+            } else if (file.type === 'text/plain') {
+                const text = await file.text();
+                extractedHtml = text.replace(/\n/g, "<br/>");
+            } else {
+                alert("Obsługiwane tylko PDF, obrazy i TXT");
+            }
+            
+            if (extractedHtml) {
+                setImportHtml(extractedHtml);
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Błąd odczytu pliku.");
+        } finally {
+            setIsReading(false);
+            if (e.target) e.target.value = '';
+        }
+      };
+
+      return React.createElement('div', { id: "cv-form-container", className: "p-6 bg-white shadow-xl h-full overflow-y-auto w-full md:w-1/2 lg:w-2/5 relative" },
+        toast && React.createElement('div', { className: "fixed top-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-bounce" }, toast),
+        React.createElement('div', { className: "flex justify-between items-center mb-6" }, 
+            React.createElement('h2', { className: "text-2xl font-bold text-red-700" }, t.editorTitle), 
+            React.createElement('div', { className: "flex gap-2" }, ['pl', 'en'].map(l => React.createElement('button', { key: l, onClick: () => setLang(l), className: `px-3 py-1 text-sm font-medium rounded transition border ${lang === l ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}` }, l.toUpperCase())))
         ),
+        
+        // --- SEKCJA IMPORTU (DWUKOLUMNOWA) ---
+        React.createElement('div', { className: "mb-6" },
+            !showImport ? 
+            React.createElement('button', { 
+                onClick: () => setShowImport(true),
+                className: "w-full py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition shadow-sm border border-red-600"
+            }, t.importBtn) :
+            React.createElement('div', { className: "p-4 border-2 border-red-200 rounded-lg bg-red-50/50 shadow-inner" },
+                React.createElement('div', { className: "flex justify-between mb-2 items-center" },
+                    React.createElement('div', { className: "flex gap-2" },
+                        React.createElement('input', { type: "file", ref: fileInputRef, onChange: handleFileRead, accept: ".pdf,.txt,image/*", className: "hidden" }),
+                        React.createElement('button', { 
+                            onClick: () => fileInputRef.current.click(), 
+                            disabled: isReading,
+                            className: "text-xs bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded text-gray-700 font-medium flex items-center gap-2" 
+                        }, isReading ? t.importing : t.loadFileBtn)
+                    ),
+                    React.createElement('button', { onClick: () => setShowImport(false), className: "text-xs text-gray-500 hover:text-gray-700 font-bold" }, "ZAMKNIJ ✕")
+                ),
+                 // Instrukcja dla użytkownika (Top)
+                React.createElement('p', { className: "text-sm text-gray-700 mb-4 font-medium" }, t.importIntro),
+
+                React.createElement('div', { className: "flex flex-col md:flex-row gap-4" },
+                    // LEWA KOLUMNA: EDYTOR RICH TEXT
+                    React.createElement('div', { className: "flex-grow" },
+                         React.createElement('p', { className: "text-[10px] text-gray-500 mb-1 italic" }, "1. Zaznacz tekst myszką"),
+                         React.createElement('div', {
+                            ref: editorRef,
+                            contentEditable: true,
+                            suppressContentEditableWarning: true,
+                            dangerouslySetInnerHTML: { __html: importHtml },
+                            className: "rich-editor w-full h-80 p-3 border border-red-300 rounded-lg text-sm font-sans leading-loose text-gray-800 bg-white focus:ring-2 focus:ring-red-200 outline-none overflow-y-auto shadow-inner selection:bg-red-200 selection:text-red-900"
+                        })
+                    ),
+                    // PRAWA KOLUMNA: PRZYCISKI
+                    React.createElement('div', { className: "w-full md:w-48 flex flex-col gap-2" },
+                         React.createElement('p', { className: "text-[10px] text-gray-500 mb-1 italic" }, "2. Kliknij kategorię"),
+                         React.createElement('button', { onClick: () => handleAssignSelection('name'), className: "w-full text-left px-3 py-2 bg-white hover:bg-gray-50 border border-gray-200 rounded text-xs font-medium transition text-gray-700 shadow-sm" }, t.assignName),
+                         React.createElement('button', { onClick: () => handleAssignSelection('work'), className: "w-full text-left px-3 py-2 bg-white hover:bg-gray-50 border border-gray-200 rounded text-xs font-medium transition text-gray-700 shadow-sm" }, t.assignWork),
+                         React.createElement('button', { onClick: () => handleAssignSelection('education'), className: "w-full text-left px-3 py-2 bg-white hover:bg-gray-50 border border-gray-200 rounded text-xs font-medium transition text-gray-700 shadow-sm" }, t.assignEdu),
+                         React.createElement('div', { className: "h-px bg-gray-200 my-1" }),
+                         React.createElement('button', { onClick: () => handleAssignSelection('qualifications'), className: "w-full text-left px-3 py-2 bg-white hover:bg-gray-50 border border-gray-200 rounded text-xs font-medium transition text-gray-700 shadow-sm" }, t.assignQuals),
+                         React.createElement('button', { onClick: () => handleAssignSelection('languages'), className: "w-full text-left px-3 py-2 bg-white hover:bg-gray-50 border border-gray-200 rounded text-xs font-medium transition text-gray-700 shadow-sm" }, t.assignLangs),
+                         React.createElement('button', { onClick: () => handleAssignSelection('skills'), className: "w-full text-left px-3 py-2 bg-white hover:bg-gray-50 border border-gray-200 rounded text-xs font-medium transition text-gray-700 shadow-sm" }, t.assignSkills)
+                    )
+                ),
+                 // Instrukcja (Bottom)
+                React.createElement('p', { className: "text-sm text-gray-600 mt-4 italic text-center font-medium" }, t.importOutro)
+            )
+        ),
+
         React.createElement(Section, { title: t.basicInfo, defaultOpen: true },
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.fullName), React.createElement('input', { type: "text", value: cvData.name, onChange: (e) => setCvData(prev => ({...prev, name: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.dob), React.createElement('input', { type: "text", value: cvData.dob, onChange: (e) => setCvData(prev => ({...prev, dob: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
@@ -445,7 +643,7 @@
               onDragStart: () => setDraggedItemIndex(index), onDragOver: (e) => e.preventDefault(),
               onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== index) { moveWorkExperience(draggedItemIndex, index); } setDraggedItemIndex(null); }
             },
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.company), React.createElement('input', { type: "text", value: work.company, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, company: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
+            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.company), React.createElement('input', { type: "text", value: work.company, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, company: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm font-bold" })),
             React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.jobTitle), React.createElement('input', { type: "text", value: work.jobTitle, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, jobTitle: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
             React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.period), React.createElement('input', { type: "text", value: work.dateRange, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, dateRange: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
             React.createElement('div', { className: "mb-3" },
@@ -493,11 +691,6 @@
     
     const App = () => {
       const [cvData, setCvData] = useState(defaultData); const [view, setView] = useState('form'); const [lang, setLang] = useState('pl');
-      const handleShare = async () => {
-        const blob = await createPdf('cv-document', 'blob'); const file = new File([blob], 'cv.pdf', { type: 'application/pdf' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'CV', text: 'CV' }); }
-        else { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'cv.pdf'; a.click(); }
-      };
       return React.createElement('div', { className: `min-h-screen flex flex-col md:flex-row ${view === 'form' ? 'mobile-view-form' : 'mobile-view-preview'}` },
         React.createElement('div', { className: "md:hidden bg-white p-4 border-b flex justify-around sticky top-0 z-10 shadow-sm" },
             React.createElement('button', { onClick: () => setView('form'), className: `px-4 py-2 text-sm font-medium rounded-lg ${view === 'form' ? 'bg-red-600 text-white' : 'text-gray-600'}` }, "Edytor"),
@@ -506,7 +699,6 @@
         React.createElement(CvForm, { cvData, setCvData, lang, setLang }),
         React.createElement('div', { id: "cv-preview-container", className: "bg-gray-100 flex-grow w-full md:w-1/2 lg:w-3/5 overflow-auto flex flex-col" },
             React.createElement('div', { className: "sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b p-3 flex justify-end gap-2 shadow-sm" },
-                React.createElement('button', { onClick: handleShare, className: "flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded text-xs" }, React.createElement(MailIcon, { className: "w-4 h-4" }), "Udostępnij"),
                 React.createElement('button', { onClick: () => generatePdf('cv-document'), className: "flex items-center gap-2 bg-[#E31D2A] text-white px-3 py-2 rounded text-xs" }, React.createElement(DownloadIcon, { className: "w-4 h-4" }), "Pobierz PDF")
             ),
             React.createElement('div', { className: "p-6 md:p-10 flex justify-center min-w-fit" },
