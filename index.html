@@ -2,7 +2,6 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
-  <!-- Usunięto lokalny favicon /vite.svg, który nie zadziałałby offline bez pliku -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Generator CV - Covebo</title>
   
@@ -388,25 +387,28 @@
 
     const Section = ({ title, children, description, defaultOpen = false, draggable = false, onDragStart, onDragOver, onDrop, isDragging = false, onMoveUp, onMoveDown, moveText, moveUpTitle, moveDownTitle }) => {
       const [isOpen, setIsOpen] = useState(defaultOpen);
+      const showSorting = !!moveText;
+
       return React.createElement('div', { className: `mb-4 border border-gray-200 rounded-lg bg-white overflow-hidden shadow-sm transition-all ${isDragging ? 'drag-ghost' : ''}`, draggable, onDragStart, onDragOver, onDrop },
         React.createElement('div', { className: "flex items-center bg-gray-50 border-b border-gray-100" },
-          draggable && React.createElement('div', { className: "pl-2 flex items-center text-gray-400" },
-             React.createElement('div', { className: "cursor-grab active:cursor-grabbing p-2", title: "Chwyć, aby przeciągnąć" }, React.createElement(DragHandleIcon, null)),
-             (onMoveUp || onMoveDown) && React.createElement('div', { className: "flex flex-col mr-1 items-center group" },
+          (draggable || showSorting) && React.createElement('div', { className: "pl-2 flex items-center text-gray-400" },
+             showSorting ? React.createElement('div', { className: "flex flex-col items-center justify-center mx-2 py-1" },
                 React.createElement('button', { 
                     onClick: (e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }, 
                     disabled: !onMoveUp,
-                    title: moveUpTitle || "Przesuń w górę",
-                    className: `p-0.5 leading-none ${onMoveUp ? 'hover:text-red-600 text-gray-500' : 'text-gray-200 cursor-default'}` 
-                }, React.createElement(ArrowUpIcon, { width: 14, height: 14 })),
-                moveText && React.createElement('span', { className: "text-[9px] font-bold text-gray-600 uppercase leading-none select-none tracking-wider my-0.5" }, moveText),
+                    title: moveUpTitle,
+                    className: `leading-none ${onMoveUp ? 'hover:text-red-600 text-gray-600' : 'text-gray-300 cursor-default'}` 
+                }, React.createElement(ArrowUpIcon, { width: 16, height: 16 })),
+                
+                React.createElement('span', { className: "text-[8px] font-black text-gray-500 uppercase leading-tight select-none tracking-[0.15em] my-0.5" }, moveText),
+                
                 React.createElement('button', { 
                     onClick: (e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }, 
                     disabled: !onMoveDown,
-                    title: moveDownTitle || "Przesuń w dół",
-                    className: `p-0.5 leading-none ${onMoveDown ? 'hover:text-red-600 text-gray-500' : 'text-gray-200 cursor-default'}` 
-                }, React.createElement(ArrowDownIcon, { width: 14, height: 14 }))
-             )
+                    title: moveDownTitle,
+                    className: `leading-none ${onMoveDown ? 'hover:text-red-600 text-gray-600' : 'text-gray-300 cursor-default'}` 
+                }, React.createElement(ArrowDownIcon, { width: 16, height: 16 }))
+             ) : React.createElement('div', { className: "cursor-grab active:cursor-grabbing p-3", title: "Chwyć, aby przeciągnąć" }, React.createElement(DragHandleIcon, null))
           ),
           React.createElement('button', { onClick: () => setIsOpen(!isOpen), className: "flex-grow flex justify-between items-center p-4 hover:bg-gray-100 text-left" },
             React.createElement('div', null, React.createElement('h3', { className: "text-lg font-bold text-gray-800 leading-none" }, title), description && React.createElement('p', { className: "text-[10px] text-gray-500 mt-1 font-normal" }, description)),
@@ -423,6 +425,7 @@
       const [showImport, setShowImport] = useState(false);
       const [importHtml, setImportHtml] = useState(""); // State for HTML content
       const [isReading, setIsReading] = useState(false);
+      const [sectionOrder, setSectionOrder] = useState(['workExperience', 'personalDetails', 'languages', 'skills', 'education']);
       const fileInputRef = useRef(null);
       const editorRef = useRef(null); // Ref for contentEditable div
       const [toast, setToast] = useState(null);
@@ -439,13 +442,24 @@
         setCvData(prev => ({ ...prev, workExperience: updated }));
       };
       
-      const shiftExperience = (index, direction) => {
+      const shiftItem = (key, index, direction) => {
+        const list = cvData[key];
         const newIndex = index + direction;
-        if (newIndex < 0 || newIndex >= cvData.workExperience.length) return;
-        const updated = [...cvData.workExperience];
+        if (newIndex < 0 || newIndex >= list.length) return;
+        const updated = [...list];
         const [movedItem] = updated.splice(index, 1);
         updated.splice(newIndex, 0, movedItem);
-        setCvData(prev => ({ ...prev, workExperience: updated }));
+        setCvData(prev => ({ ...prev, [key]: updated }));
+      };
+
+      const moveSection = (index, direction) => {
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= sectionOrder.length) return;
+        const newOrder = [...sectionOrder];
+        const temp = newOrder[index];
+        newOrder[index] = newOrder[newIndex];
+        newOrder[newIndex] = temp;
+        setSectionOrder(newOrder);
       };
 
       const handleAssignSelection = (type) => {
@@ -677,61 +691,128 @@
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.dob), React.createElement('input', { type: "text", value: cvData.dob, onChange: (e) => setCvData(prev => ({...prev, dob: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.profilePic), React.createElement('input', { type: "file", onChange: (e) => { const f = e.target.files[0]; if(f){ const r = new FileReader(); r.onload = () => setCvData(prev => ({...prev, profilePictureUrl: r.result, imagePosition: {x:50,y:50}})); r.readAsDataURL(f); } }, accept: "image/*", className: "w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-red-50 file:text-red-700 hover:file:bg-red-100" }))
         ),
-        React.createElement(Section, { title: t.workExp, description: t.workExpDesc, defaultOpen: true },
-          cvData.workExperience.map((work, index) => React.createElement(Section, { 
-              key: work.id, title: work.company || t.newWorkExp, defaultOpen: index === 0, draggable: true, isDragging: draggedItemIndex === index,
-              onDragStart: () => setDraggedItemIndex(index), onDragOver: (e) => e.preventDefault(),
-              onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== index) { moveWorkExperience(draggedItemIndex, index); } setDraggedItemIndex(null); },
-              onMoveUp: index > 0 ? () => shiftExperience(index, -1) : null,
-              onMoveDown: index < cvData.workExperience.length - 1 ? () => shiftExperience(index, 1) : null,
-              moveText: t.moveLabel,
-              moveUpTitle: t.moveUp,
-              moveDownTitle: t.moveDown
-            },
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.company), React.createElement('input', { type: "text", value: work.company, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, company: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm font-bold" })),
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.jobTitle), React.createElement('input', { type: "text", value: work.jobTitle, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, jobTitle: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.period), React.createElement('input', { type: "text", value: work.dateRange, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, dateRange: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
-            React.createElement('div', { className: "mb-3" },
-              React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.responsibilities),
-              work.tasks.map(task => React.createElement('div', { key: task.id, className: "flex items-center gap-2 mb-2" },
-                React.createElement('input', { type: "text", value: task.text, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, tasks: w.tasks.map(tk => tk.id === task.id ? {...tk, text: e.target.value} : tk)} : w)})), className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
-                React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, tasks: w.tasks.filter(tk => tk.id !== task.id)} : w)})), className: "text-red-500 font-bold" }, "×")
-              )),
-              React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, tasks: [...w.tasks, {id: generateUniqueId(), text: ''}]} : w)})), className: "text-xs text-blue-600 hover:underline" }, t.addDuty)
-            ),
-            React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: prev.workExperience.filter(w => w.id !== work.id)})), className: "mt-4 text-xs text-red-600 hover:underline" }, t.removeWorkExp)
-          )),
-          React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: [...prev.workExperience, {id: generateUniqueId(), company: '', jobTitle: '', dateRange: '', tasks: [{id: generateUniqueId(), text: ''}]}]})), className: "mt-4 w-full py-2 border border-red-500 text-red-600 rounded-md font-medium hover:bg-red-50 transition" }, t.addWorkExp)
-        ),
-        [
-          { key: 'personalDetails', title: t.sectionQual }, { key: 'languages', title: t.sectionLang }, { key: 'skills', title: t.sectionSkills }
-        ].map(({ key, title }) => React.createElement(Section, { key: key, title, description: t.listDesc, defaultOpen: false },
-          cvData[key].map(item => React.createElement('div', { key: item.id, className: "flex items-center gap-2 mb-2" },
-            React.createElement('input', { type: "text", value: item.text, onChange: (e) => setCvData(p => ({ ...p, [key]: p[key].map(i => i.id === item.id ? {...i, text: e.target.value} : i) })), className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
-            React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [key]: p[key].filter(i => i.id !== item.id) })), className: "text-red-500 font-bold" }, "×")
-          )),
-          React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [key]: [...p[key], {id: generateUniqueId(), text: ''}] })), className: "mt-2 text-xs text-blue-600 hover:underline" }, "+ Dodaj")
-        )),
-        React.createElement(Section, { title: t.education, description: t.eduDesc, defaultOpen: false },
-          cvData.education.map((edu) => React.createElement(Section, { key: edu.id, title: edu.schoolName || t.newEdu, defaultOpen: true },
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.school), React.createElement('input', { type: "text", value: edu.schoolName, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, schoolName: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.degree), React.createElement('input', { type: "text", value: edu.degree, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, degree: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.period), React.createElement('input', { type: "text", value: edu.dateRange, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, dateRange: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
-            React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.description), React.createElement('textarea', { value: edu.description, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, description: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm h-20" })),
-            React.createElement('button', { onClick: () => setCvData(p => ({ ...p, education: p.education.filter(e => e.id !== edu.id) })), className: "mt-4 text-xs text-red-600 hover:underline" }, t.removeEdu)
-          )),
-          React.createElement('button', { onClick: () => setCvData(p => ({...p, education: [...p.education, {id: generateUniqueId(), schoolName: '', degree: '', dateRange: '', description: ''}]})), className: "mt-4 w-full py-2 border border-red-500 text-red-600 rounded-md font-medium hover:bg-red-50 transition" }, t.addEdu)
-        ),
+
+        // --- DYNAMICZNE RENDEROWANIE SEKCJI ---
+        sectionOrder.map((sectionKey, index) => {
+           const isFirst = index === 0;
+           const isLast = index === sectionOrder.length - 1;
+           const commonProps = {
+                key: sectionKey,
+                onMoveUp: isFirst ? null : () => moveSection(index, -1),
+                onMoveDown: isLast ? null : () => moveSection(index, 1),
+                moveText: t.moveLabel,
+                moveUpTitle: t.moveUp,
+                moveDownTitle: t.moveDown
+           };
+
+           if (sectionKey === 'workExperience') {
+               return React.createElement(Section, { 
+                 title: t.workExp, description: t.workExpDesc, defaultOpen: true, ...commonProps
+               },
+                cvData.workExperience.map((work, idx) => React.createElement(Section, { 
+                    key: work.id, title: work.company || t.newWorkExp, defaultOpen: idx === 0, draggable: true, isDragging: draggedItemIndex === idx,
+                    onDragStart: () => setDraggedItemIndex(idx), onDragOver: (e) => e.preventDefault(),
+                    onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== idx) { moveWorkExperience(draggedItemIndex, idx); } setDraggedItemIndex(null); },
+                    onMoveUp: idx > 0 ? () => shiftItem('workExperience', idx, -1) : null,
+                    onMoveDown: idx < cvData.workExperience.length - 1 ? () => shiftItem('workExperience', idx, 1) : null,
+                    moveText: t.moveLabel, moveUpTitle: t.moveUp, moveDownTitle: t.moveDown
+                  },
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.company), React.createElement('input', { type: "text", value: work.company, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, company: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm font-bold" })),
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.jobTitle), React.createElement('input', { type: "text", value: work.jobTitle, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, jobTitle: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.period), React.createElement('input', { type: "text", value: work.dateRange, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, dateRange: e.target.value} : w)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
+                  React.createElement('div', { className: "mb-3" },
+                    React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.responsibilities),
+                    work.tasks.map(task => React.createElement('div', { key: task.id, className: "flex items-center gap-2 mb-2" },
+                      React.createElement('input', { type: "text", value: task.text, onChange: (e) => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, tasks: w.tasks.map(tk => tk.id === task.id ? {...tk, text: e.target.value} : tk)} : w)})), className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
+                      React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, tasks: w.tasks.filter(tk => tk.id !== task.id)} : w)})), className: "text-red-500 font-bold" }, "×")
+                    )),
+                    React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: prev.workExperience.map(w => w.id === work.id ? {...w, tasks: [...w.tasks, {id: generateUniqueId(), text: ''}]} : w)})), className: "text-xs text-blue-600 hover:underline" }, t.addDuty)
+                  ),
+                  React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: prev.workExperience.filter(w => w.id !== work.id)})), className: "mt-4 text-xs text-red-600 hover:underline" }, t.removeWorkExp)
+                )),
+                React.createElement('button', { onClick: () => setCvData(prev => ({...prev, workExperience: [...prev.workExperience, {id: generateUniqueId(), company: '', jobTitle: '', dateRange: '', tasks: [{id: generateUniqueId(), text: ''}]}]})), className: "mt-4 w-full py-2 border border-red-500 text-red-600 rounded-md font-medium hover:bg-red-50 transition" }, t.addWorkExp)
+              );
+           }
+           
+           if (sectionKey === 'education') {
+               return React.createElement(Section, { title: t.education, description: t.eduDesc, defaultOpen: false, ...commonProps },
+                 cvData.education.map((edu, idx) => React.createElement(Section, { 
+                   key: edu.id, title: edu.schoolName || t.newEdu, defaultOpen: true,
+                   onMoveUp: idx > 0 ? () => shiftItem('education', idx, -1) : null,
+                   onMoveDown: idx < cvData.education.length - 1 ? () => shiftItem('education', idx, 1) : null,
+                   moveText: t.moveLabel, moveUpTitle: t.moveUp, moveDownTitle: t.moveDown
+                  },
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.school), React.createElement('input', { type: "text", value: edu.schoolName, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, schoolName: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.degree), React.createElement('input', { type: "text", value: edu.degree, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, degree: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.period), React.createElement('input', { type: "text", value: edu.dateRange, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, dateRange: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm" })),
+                  React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.description), React.createElement('textarea', { value: edu.description, onChange: (e) => setCvData(p => ({...p, education: p.education.map(ed => ed.id === edu.id ? {...ed, description: e.target.value} : ed)})), className: "w-full border border-gray-300 rounded p-2 text-sm h-20" })),
+                  React.createElement('button', { onClick: () => setCvData(p => ({ ...p, education: p.education.filter(e => e.id !== edu.id) })), className: "mt-4 text-xs text-red-600 hover:underline" }, t.removeEdu)
+                )),
+                React.createElement('button', { onClick: () => setCvData(p => ({...p, education: [...p.education, {id: generateUniqueId(), schoolName: '', degree: '', dateRange: '', description: ''}]})), className: "mt-4 w-full py-2 border border-red-500 text-red-600 rounded-md font-medium hover:bg-red-50 transition" }, t.addEdu)
+              );
+           }
+
+           // Listy: Uprawnienia, Języki, Umiejętności
+           const listConfig = {
+               personalDetails: { title: t.sectionQual },
+               languages: { title: t.sectionLang },
+               skills: { title: t.sectionSkills }
+           };
+           
+           if (listConfig[sectionKey]) {
+               return React.createElement(Section, { title: listConfig[sectionKey].title, description: t.listDesc, defaultOpen: false, ...commonProps },
+                 cvData[sectionKey].map((item, idx) => React.createElement('div', { key: item.id, className: "flex items-center gap-2 mb-2" },
+                    React.createElement('div', { className: "flex flex-col items-center justify-center px-1" },
+                        React.createElement('button', { 
+                            onClick: () => shiftItem(sectionKey, idx, -1), 
+                            disabled: idx === 0,
+                            className: `leading-none ${idx > 0 ? 'hover:text-red-600 text-gray-500' : 'text-gray-200 cursor-default'}` 
+                        }, React.createElement(ArrowUpIcon, { width: 14, height: 14 })),
+                        
+                        React.createElement('span', { className: "text-[8px] font-black text-gray-500 uppercase leading-tight select-none tracking-[0.15em] my-0.5" }, t.moveLabel),
+                        
+                        React.createElement('button', { 
+                            onClick: () => shiftItem(sectionKey, idx, 1), 
+                            disabled: idx === cvData[sectionKey].length - 1,
+                            className: `leading-none ${idx < cvData[sectionKey].length - 1 ? 'hover:text-red-600 text-gray-500' : 'text-gray-200 cursor-default'}` 
+                        }, React.createElement(ArrowDownIcon, { width: 14, height: 14 }))
+                    ),
+                    React.createElement('input', { type: "text", value: item.text, onChange: (e) => setCvData(p => ({ ...p, [sectionKey]: p[sectionKey].map(i => i.id === item.id ? {...i, text: e.target.value} : i) })), className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
+                    React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [sectionKey]: p[sectionKey].filter(i => i.id !== item.id) })), className: "text-red-500 font-bold px-2" }, "×")
+                  )),
+                  React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [sectionKey]: [...p[sectionKey], {id: generateUniqueId(), text: ''}] })), className: "mt-2 text-xs text-blue-600 hover:underline" }, "+ Dodaj")
+               );
+           }
+           return null;
+        }),
+
         React.createElement('div', { className: "mt-8 sticky bottom-0 bg-white pt-4 pb-4 border-t" }, React.createElement('button', { onClick: () => generatePdf('cv-document'), className: "w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition shadow-md" }, t.downloadPdf))
       );
     };
     
     // --- MAIN APP ---
     const defaultData = {
-      name: 'Jan Kowalski', dob: '01.01.1990', profilePictureUrl: 'https://placehold.co/180x180/E31D2A/ffffff?text=ZDJĘCIE', imagePosition: { x: 50, y: 50 },
-      personalDetails: [{ id: generateUniqueId(), text: 'Prawo jazdy kat. B' }], skills: [{ id: generateUniqueId(), text: 'Obsługa pakowarki automatycznej' }], languages: [{ id: generateUniqueId(), text: 'Angielski - B1' }],
-      workExperience: [{ id: generateUniqueId(), company: 'Fabryka Mebli', jobTitle: 'Pracownik Produkcji', dateRange: '03.2020 - obecnie', tasks: [{ id: generateUniqueId(), text: 'Obsługa maszyn' }] }],
-      education: [{ id: generateUniqueId(), schoolName: 'Technikum nr 1', degree: 'Technik Logistyk', dateRange: '2014-2018', description: '' }]
+      name: 'Tutaj wpisz Imię i Nazwisko',
+      dob: 'Tutaj wpisz datę urodzenia',
+      profilePictureUrl: 'https://placehold.co/180x180/E31D2A/ffffff?text=ZDJĘCIE',
+      imagePosition: { x: 50, y: 50 },
+      personalDetails: [{ id: generateUniqueId(), text: 'Tutaj wpisz uprawnienia (np. Prawo jazdy)' }],
+      skills: [{ id: generateUniqueId(), text: 'Tutaj wpisz umiejętności dodatkowe' }],
+      languages: [{ id: generateUniqueId(), text: 'Tutaj wpisz znane języki' }],
+      workExperience: [{
+          id: generateUniqueId(),
+          company: 'Tutaj wpisz nazwę pracodawcy',
+          jobTitle: 'Tutaj wpisz stanowisko',
+          dateRange: 'Tutaj wpisz okres zatrudnienia',
+          tasks: [{ id: generateUniqueId(), text: 'Tutaj wpisz wykonywany obowiązek' }]
+      }],
+      education: [{
+          id: generateUniqueId(),
+          schoolName: 'Tutaj wpisz nazwę szkoły',
+          degree: 'Tutaj wpisz kierunek / stopień',
+          dateRange: 'Tutaj wpisz lata nauki',
+          description: ''
+      }]
     };
     
     const App = () => {
