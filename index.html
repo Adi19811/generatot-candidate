@@ -499,7 +499,7 @@
           React.createElement('div', { className: "w-[62%] p-6 pr-10 pt-20 order-2 flex flex-col" },
             React.createElement('div', { className: "w-full text-center text-4xl font-bold text-gray-300 tracking-widest uppercase mb-6" }, t.previewCV),
             workExperience?.length > 0 && React.createElement(React.Fragment, null, React.createElement(SectionTitle, null, t.previewExp), workExperience.map(exp => React.createElement('div', { key: exp.id, className: "mb-6" }, 
-                React.createElement('p', { className: "text-sm uppercase" }, 
+                React.createElement('p', { className: "text-xs uppercase" }, 
                     React.createElement('span', { className: "font-bold" }, exp.company),
                     exp.jobTitle && ` - ${exp.jobTitle}`
                 ), 
@@ -903,7 +903,7 @@
                  title: t.workExp, description: t.workExpDesc, defaultOpen: true, ...commonProps
                },
                 cvData.workExperience.map((work, idx) => React.createElement(Section, { 
-                    key: work.id, title: work.company || t.newWorkExp, defaultOpen: idx === 0, draggable: true, isDragging: draggedItemIndex === idx,
+                    key: work.id, title: work.company || t.newWorkExp, defaultOpen: true, draggable: true, isDragging: draggedItemIndex === idx,
                     onDragStart: () => setDraggedItemIndex(idx), onDragOver: (e) => e.preventDefault(),
                     onDrop: () => { if (draggedItemIndex !== null && draggedItemIndex !== idx) { moveWorkExperience(draggedItemIndex, idx); } setDraggedItemIndex(null); },
                     onMoveUp: idx > 0 ? () => shiftItem('workExperience', idx, -1) : null,
