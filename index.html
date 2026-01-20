@@ -179,6 +179,7 @@
         newEdu: "Nowa szkoła/kurs",
         downloadPdf: "Pobierz CV jako PDF",
         sendWhatsApp: "Wyślij przez WhatsApp",
+        sendEmail: "Wyślij mailem",
         previewDob: "Data urodzenia",
         previewQual: "Uprawnienia",
         previewSkills: "Dodatkowe umiejętności",
@@ -239,6 +240,7 @@
         newEdu: "New School/Course",
         downloadPdf: "Download CV as PDF",
         sendWhatsApp: "Send via WhatsApp",
+        sendEmail: "Send via Email",
         previewDob: "Date of Birth",
         previewQual: "Qualifications",
         previewSkills: "Additional Skills",
@@ -314,30 +316,36 @@
     const createPdfInstance = async (elementId) => {
       const originalElement = document.getElementById(elementId);
       if (!originalElement) throw new Error(`Element "${elementId}" not found.`);
+      
+      // FIX: Pobieramy logo z ORYGINAŁU (pewność, że załadowane)
+      let logoInfo = null;
+      try {
+          const origLogoWrapper = originalElement.querySelector('.cv-logo-wrapper');
+          if (origLogoWrapper) {
+              const img = origLogoWrapper.querySelector('img');
+              if (img && img.complete && img.naturalHeight > 0) {
+                 const canvas = document.createElement('canvas');
+                 canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+                 canvas.getContext('2d').drawImage(img, 0, 0);
+                 logoInfo = {
+                     dataUrl: canvas.toDataURL('image/png'),
+                     ratio: img.naturalWidth / img.naturalHeight
+                 };
+              }
+          }
+      } catch(e) { console.warn("Logo processing error", e); }
+
       const clone = originalElement.cloneNode(true);
       clone.classList.remove('shadow-2xl'); 
       clone.style.position = 'absolute'; clone.style.top = '0'; clone.style.left = '-9999px';
       clone.style.width = '210mm'; clone.style.height = 'auto'; clone.style.zoom = '1'; clone.style.margin = '0';
       
-      let logoInfo = null;
+      // Ukrywamy logo w klonie, bo dodamy je ręcznie w PDF
       const logoWrapper = clone.querySelector('.cv-logo-wrapper');
       if (logoWrapper) {
-          const img = logoWrapper.querySelector('img');
-          if (img) {
-              try {
-                 if (img.complete && img.naturalHeight !== 0) {
-                     const canvas = document.createElement('canvas');
-                     canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-                     canvas.getContext('2d').drawImage(img, 0, 0);
-                     logoInfo = {
-                         dataUrl: canvas.toDataURL('image/png'),
-                         ratio: img.naturalWidth / img.naturalHeight
-                     };
-                 }
-              } catch (e) { console.warn("Błąd przetwarzania logo", e); }
-          }
           logoWrapper.style.display = 'none';
       }
+      
       document.body.appendChild(clone);
       
       try {
@@ -447,6 +455,25 @@
         }
     };
 
+    // --- EMAIL SHARE ---
+    const sendEmail = async (elementId) => {
+        try {
+            // 1. Generuj i pobierz PDF (niezbędne, bo mailto nie obsługuje załączników automatycznie)
+            const pdf = await createPdfInstance(elementId);
+            pdf.save('cv.pdf');
+            
+            // 2. Otwórz klienta poczty
+            setTimeout(() => {
+                const subject = encodeURIComponent("Moje CV");
+                const body = encodeURIComponent("Dzień dobry,\n\nW załączniku przesyłam moje CV (plik został pobrany na urządzenie).\n\nPozdrawiam");
+                window.location.href = `mailto:?subject=${subject}&body=${body}`;
+            }, 500);
+        } catch (err) {
+            console.error(err);
+            alert("Błąd generowania PDF.");
+        }
+    };
+
     // --- ICONS ---
     const ChevronIcon = ({ className }) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className }, React.createElement('polyline', { points: "6 9 12 15 18 9" }));
     const DownloadIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), React.createElement('polyline', { points: "7 10 12 15 17 10" }), React.createElement('line', { x1: "12", y1: "15", x2: "12", y2: "3" }));
@@ -456,6 +483,7 @@
     const ArrowUpIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('polyline', { points: "18 15 12 9 6 15" }));
     const ArrowDownIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('polyline', { points: "6 9 12 15 18 9" }));
     const WhatsAppIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('path', { d: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" }));
+    const MailIcon = (props) => React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, React.createElement('rect', { width: "20", height: "16", x: "2", y: "4", rx: "2" }), React.createElement('path', { d: "m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" }));
 
 
     // --- COMPONENTS ---
@@ -985,6 +1013,9 @@
             ),
             React.createElement('button', { onClick: () => sharePdf('cv-document'), className: "flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition shadow-md flex justify-center items-center gap-2" }, 
                 React.createElement(WhatsAppIcon, { className: "w-5 h-5" }), "WhatsApp"
+            ),
+            React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex-1 bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition shadow-md flex justify-center items-center gap-2" }, 
+                React.createElement(MailIcon, { className: "w-5 h-5" }), "E-mail"
             )
         )
       );
@@ -1026,7 +1057,8 @@
         React.createElement('div', { id: "cv-preview-container", className: "bg-gray-100 flex-grow w-full md:w-1/2 lg:w-3/5 overflow-auto flex flex-col" },
             React.createElement('div', { className: "sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b p-3 flex justify-end gap-2 shadow-sm" },
                 React.createElement('button', { onClick: () => generatePdf('cv-document'), className: "flex items-center gap-2 bg-[#E31D2A] text-white px-3 py-2 rounded text-xs" }, React.createElement(DownloadIcon, { className: "w-4 h-4" }), "Pobierz PDF"),
-                React.createElement('button', { onClick: () => sharePdf('cv-document'), className: "flex items-center gap-2 bg-green-500 text-white px-3 py-2 rounded text-xs" }, React.createElement(WhatsAppIcon, { className: "w-4 h-4" }), "WhatsApp")
+                React.createElement('button', { onClick: () => sharePdf('cv-document'), className: "flex items-center gap-2 bg-green-500 text-white px-3 py-2 rounded text-xs" }, React.createElement(WhatsAppIcon, { className: "w-4 h-4" }), "WhatsApp"),
+                React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded text-xs" }, React.createElement(MailIcon, { className: "w-4 h-4" }), "E-mail")
             ),
             React.createElement('div', { className: "p-6 md:p-10 flex justify-center min-w-fit" },
                  React.createElement(CvPreview, { cvData, id: "cv-document", className: "w-[210mm] shrink-0", onImagePositionChange: (p) => setCvData(prev => ({ ...prev, imagePosition: p })), lang })
