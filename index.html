@@ -423,8 +423,13 @@
       return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
         React.createElement('header', { className: "relative text-white h-[140px]" },
           React.createElement('img', { src: "Covebostopka.png", alt: "Nagłówek", className: "absolute inset-0 w-full h-full object-cover z-0" }),
-          React.createElement('div', { className: "relative z-10 flex items-center w-full h-full px-10" },
-            React.createElement('div', { className: 'w-1/2 ml-auto flex justify-end items-center text-right' },
+          React.createElement('div', { className: "relative z-10 flex items-center justify-between w-full h-full px-10" },
+             // LOGO W GÓRNYM LEWYM ROGU
+            React.createElement('div', { className: "flex-shrink-0" },
+                React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo Icon", className: "h-20 w-auto object-contain" })
+            ),
+            // IMIĘ I NAZWISKO
+            React.createElement('div', { className: 'flex-grow flex justify-end items-center text-right' },
               React.createElement('h1', { className: "text-4xl font-bold leading-tight uppercase drop-shadow-md" }, name || 'Imię i Nazwisko')
             )
           ),
@@ -460,7 +465,8 @@
             ))),
             education?.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), education.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${edu.schoolName} - ${edu.degree}`), React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), edu.description && React.createElement('p', { className: "text-xs" }, edu.description)))),
             React.createElement('div', { className: 'flex-grow min-h-[24px]' }),
-            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo", className: "w-24 h-auto" }))
+            // LOGO W DOLNYM PRAWYM ROGU
+            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "logo-covebo.png", alt: "Logo", className: "h-12 w-auto" }))
           )
         )
       );
