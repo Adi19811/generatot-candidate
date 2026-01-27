@@ -373,12 +373,20 @@
         const { jsPDF } = window.jspdf;
         // Włączona kompresja wewnętrzna PDF, ale źródłowa bitmapa będzie bardzo wysoka
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+        
         const pxPerMm = canvas.width / 210;
+        const pageHeight = 297 * pxPerMm; // Obliczamy wysokość strony A4 w pikselach canvasa
         let startY = 0;
         
         while (startY < canvas.height) {
+          // FIX: Zapobieganie pustej stronie jeśli overflow jest minimalny (< 1mm)
+          if (startY > 0 && (canvas.height - startY) < pxPerMm) {
+              break;
+          }
+
           if (startY > 0) pdf.addPage();
-          const pageHeightPx = Math.min(canvas.height - startY, 297 * pxPerMm);
+          
+          const pageHeightPx = Math.min(canvas.height - startY, pageHeight);
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = canvas.width; tempCanvas.height = pageHeightPx;
           const ctx = tempCanvas.getContext('2d');
@@ -1037,9 +1045,7 @@
             React.createElement('button', { onClick: () => sharePdf('cv-document'), className: "flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition shadow-md flex justify-center items-center gap-2" }, 
                 React.createElement(WhatsAppIcon, { className: "w-5 h-5" }), "WhatsApp"
             ),
-            React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex-1 bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition shadow-md flex justify-center items-center gap-2" }, 
-                React.createElement(MailIcon, { className: "w-4 h-4" }), "E-mail"
-            )
+            React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded text-xs" }, React.createElement(MailIcon, { className: "w-4 h-4" }), "E-mail")
         )
       );
     };
