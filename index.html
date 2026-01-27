@@ -607,7 +607,7 @@
                 languages?.length > 0 && React.createElement('div', null, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewLang), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, languages.map(l => React.createElement('li', { key: l.id }, l.text))))
             )
           ),
-          React.createElement('div', { className: "w-[62%] p-6 pr-10 pt-20 order-2 flex flex-col" },
+          React.createElement('div', { className: "w-[62%] p-6 pr-10 pt-20 order-2 flex flex-col relative" },
             React.createElement('div', { className: "w-full text-center text-4xl font-bold text-gray-300 tracking-widest uppercase mb-6" }, t.previewCV),
             workExperience?.length > 0 && React.createElement(React.Fragment, null, React.createElement(SectionTitle, null, t.previewExp), workExperience.map(exp => React.createElement('div', { key: exp.id, className: "mb-6" }, 
                 React.createElement('p', { className: "text-xs uppercase" }, 
@@ -618,11 +618,12 @@
                 React.createElement('ul', { className: "list-disc pl-5 text-xs space-y-1" }, exp.tasks.map(task => React.createElement('li', { key: task.id }, task.text)))
             ))),
             education?.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), education.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${edu.schoolName} - ${edu.degree}`), React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), edu.description && React.createElement('p', { className: "text-xs" }, edu.description)))),
-            React.createElement('div', { className: 'flex-grow min-h-[24px]' }),
-            // LOGO W DOLNYM PRAWYM ROGU
-            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo", className: "h-12 w-auto" }))
+            React.createElement('div', { className: 'flex-grow min-h-[24px]' })
+            // LOGO ZOSTAŁO PRZENIESIONE NIŻEJ, ABY BYŁO NA STAŁE
           )
-        )
+        ),
+        // NOWE LOGO - ABSOLUTE (Na dole pierwszej strony)
+        React.createElement('div', { className: 'absolute cv-logo-wrapper', style: { top: '272mm', right: '40px', zIndex: 50 } }, React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo", className: "h-12 w-auto" }))
       );
     };
 
