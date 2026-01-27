@@ -49,6 +49,27 @@
     .rich-editor {
         white-space: pre-wrap; /* Zachowaj formatowanie białych znaków */
     }
+    
+    /* Styl dla znaczników podziału stron w podglądzie */
+    .page-break-markers {
+        background-image: linear-gradient(to bottom, transparent calc(297mm - 1px), #E31D2A calc(297mm - 1px), #E31D2A 297mm, transparent 297mm);
+        background-size: 100% 297mm;
+        pointer-events: none;
+    }
+    .page-break-markers::after {
+        content: "--- KOLEJNA STRONA ---";
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 297mm;
+        font-size: 10px;
+        color: #E31D2A;
+        background: white;
+        padding: 0 4px;
+        font-weight: bold;
+    }
+    /* Powtarzanie tekstu dla kolejnych stron (prosta obsługa do 3 stron) */
+    .page-marker-2 { top: 594mm !important; }
   </style>
 
 <!-- Konfiguracja importów modułów ES dla Reacta - wersja uniwersalna -->
@@ -357,10 +378,16 @@
       clone.style.position = 'absolute'; clone.style.top = '0'; clone.style.left = '-9999px';
       clone.style.width = '210mm'; clone.style.height = 'auto'; clone.style.zoom = '1'; clone.style.margin = '0';
       
-      // Ukrywamy logo w klonie, bo dodamy je ręcznie w PDF
+      // Ukrywamy logo w klonie
       const logoWrapper = clone.querySelector('.cv-logo-wrapper');
       if (logoWrapper) {
           logoWrapper.style.display = 'none';
+      }
+
+      // Ukrywamy znaczniki stron w PDF
+      const markers = clone.querySelector('.page-break-markers');
+      if (markers) {
+          markers.remove();
       }
       
       document.body.appendChild(clone);
@@ -524,7 +551,12 @@
       const { name, profilePictureUrl, imagePosition, dob, personalDetails, skills, languages, workExperience, education } = cvData;
       const t = translations[lang]; 
       const hasImage = profilePictureUrl && !profilePictureUrl.includes('placehold.co');
-      return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
+      return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col relative ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
+        // Visual markers for page breaks - removed for PDF generation but visible in preview
+        React.createElement('div', { className: "absolute inset-0 pointer-events-none z-50 page-break-markers" },
+             React.createElement('div', { className: "absolute left-1/2 -translate-x-1/2 top-[594mm] bg-white px-1 text-[10px] font-bold text-[#E31D2A]", style: { transform: 'translateX(-50%)' } }, "--- KOLEJNA STRONA ---")
+        ),
+
         React.createElement('header', { className: "relative text-white h-[140px]" },
           React.createElement('img', { src: "Covebostopka.png", alt: "Nagłówek", className: "absolute inset-0 w-full h-full object-cover z-0" }),
           React.createElement('div', { className: "relative z-10 flex items-center justify-between w-full h-full px-10" },
@@ -1045,7 +1077,9 @@
             React.createElement('button', { onClick: () => sharePdf('cv-document'), className: "flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition shadow-md flex justify-center items-center gap-2" }, 
                 React.createElement(WhatsAppIcon, { className: "w-5 h-5" }), "WhatsApp"
             ),
-            React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded text-xs" }, React.createElement(MailIcon, { className: "w-4 h-4" }), "E-mail")
+            React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex-1 bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition shadow-md flex justify-center items-center gap-2" }, 
+                React.createElement(MailIcon, { className: "w-4 h-4" }), "E-mail"
+            )
         )
       );
     };
