@@ -325,7 +325,8 @@
               const img = origLogoWrapper.querySelector('img');
               if (img && img.complete && img.naturalHeight > 0) {
                  // OPTYMALIZACJA: Skalujemy logo, aby nie wstawiać wielkiego pliku PNG do PDF
-                 const maxLogoDim = 300; // Max 300px szer/wys
+                 // JESZCZE BARDZIEJ ZMNIEJSZONE LOGO DLA OSZCZĘDNOŚCI MIEJSCA
+                 const maxLogoDim = 150; // Max 150px szer/wys (było 300)
                  let lw = img.naturalWidth;
                  let lh = img.naturalHeight;
                  const ratio = lw / lh;
@@ -366,8 +367,8 @@
       document.body.appendChild(clone);
       
       try {
-        // ZMNIEJSZENIE ROZMIARU: Skala zmniejszona z 1.7 na 1.45 (nadal czytelne, znacznie lżejsze)
-        const scale = 1.45;
+        // ZMNIEJSZENIE ROZMIARU: Scale 1.0 (natywna jakość ekranowa) dla minimalnego rozmiaru pliku.
+        const scale = 1.0; 
         const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY });
         
         const { jsPDF } = window.jspdf;
@@ -386,8 +387,8 @@
           ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
           ctx.drawImage(canvas, 0, startY, canvas.width, pageHeightPx, 0, 0, canvas.width, pageHeightPx);
           
-          // ZMNIEJSZENIE ROZMIARU: Zwiększona kompresja JPEG (0.55 zamiast 0.65)
-          const imgData = tempCanvas.toDataURL('image/jpeg', 0.55);
+          // ZMNIEJSZENIE ROZMIARU: Jeszcze większa kompresja JPEG (0.50)
+          const imgData = tempCanvas.toDataURL('image/jpeg', 0.50);
           
           // Użycie trybu kompresji 'FAST'
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, pageHeightPx / pxPerMm, undefined, 'FAST');
