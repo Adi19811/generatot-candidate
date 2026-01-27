@@ -577,7 +577,7 @@
         ),
 
         React.createElement('header', { className: "relative text-white h-[140px]" },
-          React.createElement('img', { src: "https://raw.githubusercontent.com/PatrykMielnik/covebo-cv/master/public/Covebostopka.png", alt: "Nagłówek", crossOrigin: "anonymous", className: "absolute inset-0 w-full h-full object-cover z-0" }),
+          React.createElement('img', { src: "Covebostopka.png", alt: "Nagłówek", className: "absolute inset-0 w-full h-full object-cover z-0" }),
           React.createElement('div', { className: "relative z-10 flex items-center justify-between w-full h-full px-10" },
             
             // IMIĘ I NAZWISKO
@@ -620,7 +620,7 @@
             education?.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), education.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${edu.schoolName} - ${edu.degree}`), React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), edu.description && React.createElement('p', { className: "text-xs" }, edu.description)))),
             React.createElement('div', { className: 'flex-grow min-h-[24px]' }),
             // LOGO W DOLNYM PRAWYM ROGU
-            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "https://raw.githubusercontent.com/PatrykMielnik/covebo-cv/master/public/logo-covebo-icon.png", alt: "Logo", crossOrigin: "anonymous", className: "h-12 w-auto" }))
+            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo", className: "h-12 w-auto" }))
           )
         )
       );
