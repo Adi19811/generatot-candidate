@@ -154,6 +154,8 @@
         basicInfo: "Dane Podstawowe",
         fullName: "Imię i Nazwisko",
         dob: "Data urodzenia",
+        email: "Adres e-mail",
+        phone: "Numer telefonu",
         profilePic: "Zdjęcie Profilowe",
         workExp: "Doświadczenie Zawodowe",
         workExpDesc: "",
@@ -181,6 +183,8 @@
         sendWhatsApp: "Wyślij przez WhatsApp",
         sendEmail: "Wyślij mailem",
         previewDob: "Data urodzenia",
+        previewEmail: "E-mail",
+        previewPhone: "Telefon",
         previewQual: "Uprawnienia",
         previewSkills: "Dodatkowe umiejętności",
         previewLang: "Znajomość języków obcych",
@@ -215,6 +219,8 @@
         basicInfo: "Basic Information",
         fullName: "Full Name",
         dob: "Date of Birth",
+        email: "E-mail Address",
+        phone: "Phone Number",
         profilePic: "Profile Picture",
         workExp: "Work Experience",
         workExpDesc: "",
@@ -242,6 +248,8 @@
         sendWhatsApp: "Send via WhatsApp",
         sendEmail: "Send via Email",
         previewDob: "Date of Birth",
+        previewEmail: "E-mail",
+        previewPhone: "Phone",
         previewQual: "Qualifications",
         previewSkills: "Additional Skills",
         previewLang: "Languages",
@@ -277,6 +285,8 @@
         pl: {
             name: 'uzupełnij',
             dob: 'uzupełnij',
+            email: 'uzupełnij',
+            phone: 'uzupełnij',
             personalDetails: 'Tutaj wpisz uprawnienia (np. Prawo jazdy)',
             skills: 'Tutaj wpisz umiejętności dodatkowe',
             languages: 'Tutaj wpisz znane języki',
@@ -295,6 +305,8 @@
         en: {
             name: 'Enter Name and Surname here',
             dob: 'Enter Date of Birth here',
+            email: 'Enter E-mail here',
+            phone: 'Enter Phone Number here',
             personalDetails: 'Enter qualifications here (e.g. Driving license)',
             skills: 'Enter additional skills here',
             languages: 'Enter known languages here',
@@ -324,8 +336,7 @@
           if (origLogoWrapper) {
               const img = origLogoWrapper.querySelector('img');
               if (img && img.complete && img.naturalHeight > 0) {
-                 // OPTYMALIZACJA: Skalujemy logo, aby nie wstawiać wielkiego pliku PNG do PDF
-                 const maxLogoDim = 1000; // ZWIĘKSZONE NA 1000 DLA WYSOKIEJ JAKOŚCI (BYŁO 500)
+                 const maxLogoDim = 1000;
                  let lw = img.naturalWidth;
                  let lh = img.naturalHeight;
                  const ratio = lw / lh;
@@ -357,29 +368,60 @@
       clone.style.position = 'absolute'; clone.style.top = '0'; clone.style.left = '-9999px';
       clone.style.width = '210mm'; clone.style.height = 'auto'; clone.style.zoom = '1'; clone.style.margin = '0';
       
-      // Ukrywamy logo w klonie, bo dodamy je ręcznie w PDF
+      // Ukrywamy logo w klonie
       const logoWrapper = clone.querySelector('.cv-logo-wrapper');
       if (logoWrapper) {
           logoWrapper.style.display = 'none';
       }
-      
+
+      // 1. Dodajemy do DOM
       document.body.appendChild(clone);
+
+      // 2. Znajdźmy paski i tymczasowo je ukryjmy, żeby zmierzyć "czystą" wysokość treści
+      const gaps = clone.querySelectorAll('.page-break-gap');
+      gaps.forEach(el => el.style.display = 'none');
+      
+      // 3. Mierzymy faktyczną wysokość treści
+      // min-height kontenera (297mm) gwarantuje co najmniej 1 stronę.
+      // Jeśli treść jest dłuższa, scrollHeight to odzwierciedli.
+      const contentHeight = clone.scrollHeight;
+      
+      // 4. Przywracamy paski TYLKO jeśli znajdują się w obrębie tekstu
+      const currentWidth = clone.offsetWidth; 
+      const mmToPx = currentWidth / 210; 
+
+      gaps.forEach(el => {
+          const topStyle = el.style.top; 
+          if (topStyle && topStyle.endsWith('mm')) {
+              const topValMm = parseFloat(topStyle);
+              const topValPx = topValMm * mmToPx;
+              
+              // Jeśli pasek zaczyna się PRZED końcem treści (z małym marginesem), to go pokazujemy
+              // Dzięki temu paski poniżej tekstu pozostają ukryte (display:none) i nie generują pustych stron
+              if (topValPx < contentHeight - 10) {
+                   el.style.display = 'flex'; // Przywróć
+                   el.style.backgroundColor = '#ffffff'; // Biały maskujący
+                   el.style.zIndex = '50';
+                   const dashed = el.querySelector('div');
+                   if(dashed) dashed.style.display = 'none';
+              }
+          }
+      });
       
       try {
-        // MAKSYMALNA JAKOŚĆ: Scale 4.0 (odpowiednik >300 DPI dla druku)
-        const scale = 4.0; // ZMIANA Z 2.0 NA 4.0
-        const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY });
+        const scale = 4.0;
+        // height: clone.scrollHeight - teraz odzwierciedla faktyczną treść (bez nadmiarowych pasków na dole)
+        const canvas = await window.html2canvas(clone, { scale, useCORS: true, allowTaint: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY });
         
         const { jsPDF } = window.jspdf;
-        // Włączona kompresja wewnętrzna PDF, ale źródłowa bitmapa będzie bardzo wysoka
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
         
-        const pxPerMm = canvas.width / 210;
-        const pageHeight = 297 * pxPerMm; // Obliczamy wysokość strony A4 w pikselach canvasa
+        const pxPerMm = canvas.width / 210; // Przelicznik dla canvasa (z uwzględnieniem scale)
+        const pageHeight = 297 * pxPerMm; 
         let startY = 0;
         
         while (startY < canvas.height) {
-          // FIX: Zapobieganie pustej stronie jeśli overflow jest minimalny (< 1mm)
+          // Zapobieganie pustej stronie jeśli overflow jest minimalny (< 1mm)
           if (startY > 0 && (canvas.height - startY) < pxPerMm) {
               break;
           }
@@ -394,15 +436,12 @@
           ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
           ctx.drawImage(canvas, 0, startY, canvas.width, pageHeightPx, 0, 0, canvas.width, pageHeightPx);
           
-          // JAKOŚĆ 'RETINA': Prawie bezstratny JPEG (0.98)
-          const imgData = tempCanvas.toDataURL('image/jpeg', 0.98); // ZMIANA Z 0.80 na 0.98
+          const imgData = tempCanvas.toDataURL('image/jpeg', 0.98);
           
-          // USUNIĘCIE 'FAST' - używamy standardowego (lepszego) algorytmu skalowania w przeglądarce PDF
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, pageHeightPx / pxPerMm); 
           
           if (logoInfo) { 
               try { 
-                  // Obszar docelowy: Xstart=176, Ystart=272, MaxW=24, MaxH=15. Prawa krawędź=200.
                   const maxW = 24;
                   const maxH = 15;
                   let finalW = maxW;
@@ -413,7 +452,6 @@
                   } else {
                       finalW = maxH * logoInfo.ratio;
                   }
-                  // Wyrównanie do prawej i wyśrodkowanie w pionie
                   const posX = 200 - finalW;
                   const posY = 272 + (maxH - finalH) / 2;
                   
@@ -521,14 +559,26 @@
     const SectionTitle = ({ children }) => React.createElement('h2', { className: "text-[#E31D2A] text-lg tracking-[0.3em] font-semibold mb-6 uppercase" }, children);
 
     const CvPreview = ({ cvData, id, className, onImagePositionChange, lang = 'pl' }) => {
-      const { name, profilePictureUrl, imagePosition, dob, personalDetails, skills, languages, workExperience, education } = cvData;
+      const { name, profilePictureUrl, imagePosition, dob, email, phone, personalDetails, skills, languages, workExperience, education } = cvData;
       const t = translations[lang]; 
       const hasImage = profilePictureUrl && !profilePictureUrl.includes('placehold.co');
-      return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
+      return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col relative ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
+        // Visual markers for page breaks - removed for PDF generation but visible in preview
+        // Używamy szarego paska (tło aplikacji), aby zasłonić treść i symulować przerwę między kartkami
+        React.createElement(React.Fragment, null,
+             // Przerwa między 1 a 2 stroną
+             React.createElement('div', { className: "absolute left-0 w-full h-24 bg-gray-100 z-50 flex items-center justify-center page-break-gap", style: { top: '297mm', transform: 'translateY(-50%)' } },
+                 React.createElement('div', { className: "w-full border-b border-dashed border-gray-400" })
+             ),
+             // Przerwa między 2 a 3 stroną
+             React.createElement('div', { className: "absolute left-0 w-full h-24 bg-gray-100 z-50 flex items-center justify-center page-break-gap", style: { top: '594mm', transform: 'translateY(-50%)' } },
+                 React.createElement('div', { className: "w-full border-b border-dashed border-gray-400" })
+             )
+        ),
+
         React.createElement('header', { className: "relative text-white h-[140px]" },
-          React.createElement('img', { src: "Covebostopka.png", alt: "Nagłówek", className: "absolute inset-0 w-full h-full object-cover z-0" }),
+          React.createElement('img', { src: "https://raw.githubusercontent.com/PatrykMielnik/covebo-cv/master/public/Covebostopka.png", alt: "Nagłówek", crossOrigin: "anonymous", className: "absolute inset-0 w-full h-full object-cover z-0" }),
           React.createElement('div', { className: "relative z-10 flex items-center justify-between w-full h-full px-10" },
-             // LOGO USUNIĘTE Z GÓRNEGO LEWEGO ROGU
             
             // IMIĘ I NAZWISKO
             React.createElement('div', { className: 'flex-grow flex justify-end items-center text-right' },
@@ -550,6 +600,8 @@
           React.createElement('div', { className: "w-[38%] pl-10 pr-6 order-1 flex flex-col", style: { paddingTop: hasImage ? '125px' : '40px' } },
             React.createElement('div', { className: "bg-gray-100 p-6 flex-grow" },
                 dob && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewDob), React.createElement('p', { className: "text-sm text-black" }, dob)),
+                email && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewEmail), React.createElement('p', { className: "text-sm text-black" }, email)),
+                phone && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewPhone), React.createElement('p', { className: "text-sm text-black" }, phone)),
                 personalDetails?.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewQual), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, personalDetails.map(d => React.createElement('li', { key: d.id }, d.text)))),
                 skills?.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewSkills), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, skills.map(s => React.createElement('li', { key: s.id }, s.text)))),
                 languages?.length > 0 && React.createElement('div', null, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewLang), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, languages.map(l => React.createElement('li', { key: l.id }, l.text))))
@@ -568,7 +620,7 @@
             education?.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), education.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${edu.schoolName} - ${edu.degree}`), React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), edu.description && React.createElement('p', { className: "text-xs" }, edu.description)))),
             React.createElement('div', { className: 'flex-grow min-h-[24px]' }),
             // LOGO W DOLNYM PRAWYM ROGU
-            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "logo-covebo-icon.png", alt: "Logo", className: "h-12 w-auto" }))
+            React.createElement('div', { className: 'pt-6 pb-8 flex justify-end cv-logo-wrapper' }, React.createElement('img', { src: "https://raw.githubusercontent.com/PatrykMielnik/covebo-cv/master/public/logo-covebo-icon.png", alt: "Logo", crossOrigin: "anonymous", className: "h-12 w-auto" }))
           )
         )
       );
@@ -635,6 +687,8 @@
               
               if (next.name === oldDefaults.name) next.name = newDefaults.name;
               if (next.dob === oldDefaults.dob) next.dob = newDefaults.dob;
+              if (next.email === oldDefaults.email) next.email = newDefaults.email;
+              if (next.phone === oldDefaults.phone) next.phone = newDefaults.phone;
               
               const listKeys = ['personalDetails', 'skills', 'languages'];
               listKeys.forEach(k => {
@@ -941,6 +995,8 @@
         React.createElement(Section, { title: t.basicInfo, defaultOpen: true },
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.fullName), React.createElement('input', { type: "text", value: cvData.name, onChange: (e) => setCvData(prev => ({...prev, name: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.dob), React.createElement('input', { type: "text", value: cvData.dob, onChange: (e) => setCvData(prev => ({...prev, dob: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
+          React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.email), React.createElement('input', { type: "text", value: cvData.email, onChange: (e) => setCvData(prev => ({...prev, email: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
+          React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.phone), React.createElement('input', { type: "text", value: cvData.phone, onChange: (e) => setCvData(prev => ({...prev, phone: e.target.value})), className: "w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-red-500" })),
           React.createElement('div', { className: "mb-3" }, React.createElement('label', { className: "block text-sm font-medium text-gray-600 mb-1" }, t.profilePic), React.createElement('input', { type: "file", onChange: (e) => { const f = e.target.files[0]; if(f){ const r = new FileReader(); r.onload = () => setCvData(prev => ({...prev, profilePictureUrl: r.result, imagePosition: {x:50,y:50}})); r.readAsDataURL(f); } }, accept: "image/*", className: "w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-red-50 file:text-red-700 hover:file:bg-red-100" }))
         ),
 
@@ -1054,6 +1110,8 @@
     const defaultData = {
       name: 'uzupełnij',
       dob: 'uzupełnij',
+      email: 'uzupełnij',
+      phone: 'uzupełnij',
       profilePictureUrl: 'https://placehold.co/180x180/E31D2A/ffffff?text=ZDJĘCIE',
       imagePosition: { x: 50, y: 50 },
       personalDetails: [{ id: generateUniqueId(), text: 'Tutaj wpisz uprawnienia (np. Prawo jazdy)' }],
