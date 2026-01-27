@@ -324,12 +324,29 @@
           if (origLogoWrapper) {
               const img = origLogoWrapper.querySelector('img');
               if (img && img.complete && img.naturalHeight > 0) {
+                 // OPTYMALIZACJA: Skalujemy logo, aby nie wstawiać wielkiego pliku PNG do PDF
+                 const maxLogoDim = 300; // Max 300px szer/wys
+                 let lw = img.naturalWidth;
+                 let lh = img.naturalHeight;
+                 const ratio = lw / lh;
+
+                 if (lw > maxLogoDim || lh > maxLogoDim) {
+                    if (lw > lh) {
+                        lh = Math.round(maxLogoDim / ratio);
+                        lw = maxLogoDim;
+                    } else {
+                        lw = Math.round(maxLogoDim * ratio);
+                        lh = maxLogoDim;
+                    }
+                 }
+
                  const canvas = document.createElement('canvas');
-                 canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-                 canvas.getContext('2d').drawImage(img, 0, 0);
+                 canvas.width = lw; canvas.height = lh;
+                 canvas.getContext('2d').drawImage(img, 0, 0, lw, lh);
+                 
                  logoInfo = {
                      dataUrl: canvas.toDataURL('image/png'),
-                     ratio: img.naturalWidth / img.naturalHeight
+                     ratio: ratio
                  };
               }
           }
@@ -349,8 +366,8 @@
       document.body.appendChild(clone);
       
       try {
-        // ZMNIEJSZENIE ROZMIARU: Skala zmniejszona z 2 na 1.7 (wystarczająca jakość, mniejsza waga)
-        const scale = 1.7;
+        // ZMNIEJSZENIE ROZMIARU: Skala zmniejszona z 1.7 na 1.45 (nadal czytelne, znacznie lżejsze)
+        const scale = 1.45;
         const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY });
         
         const { jsPDF } = window.jspdf;
@@ -369,8 +386,8 @@
           ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
           ctx.drawImage(canvas, 0, startY, canvas.width, pageHeightPx, 0, 0, canvas.width, pageHeightPx);
           
-          // ZMNIEJSZENIE ROZMIARU: Zwiększona kompresja JPEG (0.65 zamiast 0.95)
-          const imgData = tempCanvas.toDataURL('image/jpeg', 0.65);
+          // ZMNIEJSZENIE ROZMIARU: Zwiększona kompresja JPEG (0.55 zamiast 0.65)
+          const imgData = tempCanvas.toDataURL('image/jpeg', 0.55);
           
           // Użycie trybu kompresji 'FAST'
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, pageHeightPx / pxPerMm, undefined, 'FAST');
