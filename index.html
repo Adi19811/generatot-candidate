@@ -910,15 +910,9 @@
                     extractedHtml += pageHtml + "<br/><br/>";
                 }
             } else if (file.type.startsWith('image/')) {
-                 const imageUrl = URL.createObjectURL(file);
-                 try {
-                     const { data: { text } } = await window.Tesseract.recognize(imageUrl, 'pol+eng', {
-                        logger: m => console.log(m)
-                     });
-                     extractedHtml = text.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
-                 } finally {
-                     URL.revokeObjectURL(imageUrl);
-                 }
+                 const { data: { text } } = await window.Tesseract.recognize(file, 'pol+eng');
+                 // Zamiana podwójnych nowych linii na odstęp
+                 extractedHtml = text.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
             } else if (file.type === 'text/plain') {
                 const text = await file.text();
                 extractedHtml = text.replace(/\n/g, "<br/>");
