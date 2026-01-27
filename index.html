@@ -349,11 +349,13 @@
       document.body.appendChild(clone);
       
       try {
-        const scale = 2;
+        // ZMNIEJSZENIE ROZMIARU: Skala zmniejszona z 2 na 1.7 (wystarczająca jakość, mniejsza waga)
+        const scale = 1.7;
         const canvas = await window.html2canvas(clone, { scale, useCORS: true, logging: false, height: clone.scrollHeight, windowHeight: clone.scrollHeight, scrollY: -window.scrollY });
         
         const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        // ZMNIEJSZENIE ROZMIARU: Włączona kompresja wewnętrzna PDF
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
         const pxPerMm = canvas.width / 210;
         let startY = 0;
         
@@ -366,8 +368,12 @@
           ctx.fillStyle = '#ffffff'; 
           ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
           ctx.drawImage(canvas, 0, startY, canvas.width, pageHeightPx, 0, 0, canvas.width, pageHeightPx);
-          const imgData = tempCanvas.toDataURL('image/jpeg', 0.95);
-          pdf.addImage(imgData, 'JPEG', 0, 0, 210, pageHeightPx / pxPerMm);
+          
+          // ZMNIEJSZENIE ROZMIARU: Zwiększona kompresja JPEG (0.65 zamiast 0.95)
+          const imgData = tempCanvas.toDataURL('image/jpeg', 0.65);
+          
+          // Użycie trybu kompresji 'FAST'
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, pageHeightPx / pxPerMm, undefined, 'FAST');
           
           if (logoInfo) { 
               try { 
@@ -1015,7 +1021,7 @@
                 React.createElement(WhatsAppIcon, { className: "w-5 h-5" }), "WhatsApp"
             ),
             React.createElement('button', { onClick: () => sendEmail('cv-document'), className: "flex-1 bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition shadow-md flex justify-center items-center gap-2" }, 
-                React.createElement(MailIcon, { className: "w-5 h-5" }), "E-mail"
+                React.createElement(MailIcon, { className: "w-4 h-4" }), "E-mail"
             )
         )
       );
