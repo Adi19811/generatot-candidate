@@ -562,6 +562,43 @@
       const { name, profilePictureUrl, imagePosition, dob, email, phone, personalDetails, skills, languages, workExperience, education } = cvData;
       const t = translations[lang]; 
       const hasImage = profilePictureUrl && !profilePictureUrl.includes('placehold.co');
+
+      // Helper filtrujący tymczasowe teksty z generatora
+      const isValidText = (text) => {
+          if (!text || typeof text !== 'string') return false;
+          const tStr = text.trim();
+          if (tStr === '') return false;
+          const lower = tStr.toLowerCase();
+          if (lower === 'uzupełnij') return false;
+          if (lower.startsWith('tutaj wpisz')) return false;
+          if (lower.startsWith('enter ') && lower.includes('here')) return false;
+          if (['imię i nazwisko', 'stanowisko', 'firma', 'szkoła', 'kierunek', 'daty do ustalenia', 'firma / stanowisko'].includes(lower)) return false;
+          return true;
+      };
+
+      const displayName = isValidText(name) ? name : '';
+      const displayDob = isValidText(dob) ? dob : '';
+      
+      const validPersonalDetails = (personalDetails || []).filter(d => isValidText(d.text));
+      const validSkills = (skills || []).filter(s => isValidText(s.text));
+      const validLanguages = (languages || []).filter(l => isValidText(l.text));
+      
+      const cleanWorkExp = (workExperience || []).map(exp => ({
+          ...exp,
+          company: isValidText(exp.company) ? exp.company : '',
+          jobTitle: isValidText(exp.jobTitle) ? exp.jobTitle : '',
+          dateRange: isValidText(exp.dateRange) ? exp.dateRange : '',
+          tasks: (exp.tasks || []).filter(task => isValidText(task.text))
+      })).filter(exp => exp.company || exp.jobTitle || exp.dateRange || exp.tasks.length > 0);
+
+      const cleanEdu = (education || []).map(edu => ({
+          ...edu,
+          schoolName: isValidText(edu.schoolName) ? edu.schoolName : '',
+          degree: isValidText(edu.degree) ? edu.degree : '',
+          dateRange: isValidText(edu.dateRange) ? edu.dateRange : '',
+          description: isValidText(edu.description) ? edu.description : ''
+      })).filter(edu => edu.schoolName || edu.degree || edu.dateRange || edu.description);
+
       return React.createElement('div', { id: id, className: `bg-white text-black min-h-[297mm] shadow-2xl flex flex-col relative ${className}`, style: { fontFamily: "'Poppins', sans-serif" } },
         // Visual markers for page breaks - removed for PDF generation but visible in preview
         // Używamy szarego paska (tło aplikacji), aby zasłonić treść i symulować przerwę między kartkami
@@ -582,7 +619,7 @@
             
             // IMIĘ I NAZWISKO
             React.createElement('div', { className: 'flex-grow flex justify-end items-center text-right' },
-              React.createElement('h1', { className: "text-4xl font-bold leading-tight uppercase drop-shadow-md" }, name || 'Imię i Nazwisko')
+              React.createElement('h1', { className: "text-4xl font-bold leading-tight uppercase drop-shadow-md" }, displayName)
             )
           ),
           hasImage && React.createElement('div', { 
@@ -591,7 +628,7 @@
             onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); const startX = e.clientX, startY = e.clientY, startPos = {...imagePosition}; const onMove = (me) => { const dx = me.clientX - startX, dy = me.clientY - startY; onImagePositionChange({ x: Math.max(0, Math.min(100, startPos.x - dx * 0.2)), y: Math.max(0, Math.min(100, startPos.y - dy * 0.2)) }); }; const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }; window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp); }
           },
             React.createElement('div', { className: "w-full h-full rounded-full overflow-hidden relative" },
-                React.createElement('img', { src: profilePictureUrl, alt: name, className: "absolute inset-0 w-full h-full object-cover pointer-events-none block", style: { objectPosition: `${imagePosition.x}% ${imagePosition.y}%` } }),
+                React.createElement('img', { src: profilePictureUrl, alt: displayName, className: "absolute inset-0 w-full h-full object-cover pointer-events-none block", style: { objectPosition: `${imagePosition.x}% ${imagePosition.y}%` } }),
                 React.createElement('div', { className: "absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 pointer-events-none text-white text-xs font-bold" }, "Przesuń")
             )
           )
@@ -599,24 +636,27 @@
         React.createElement('main', { className: "flex flex-row flex-grow" },
           React.createElement('div', { className: "w-[38%] pl-10 pr-6 order-1 flex flex-col", style: { paddingTop: hasImage ? '125px' : '40px' } },
             React.createElement('div', { className: "bg-gray-100 p-6 flex-grow" },
-                dob && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewDob), React.createElement('p', { className: "text-sm text-black" }, dob)),
-                // USUNIĘTE POLA EMAIL I TELEFON Z PODGLĄDU
-                personalDetails?.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewQual), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, personalDetails.map(d => React.createElement('li', { key: d.id }, d.text)))),
-                skills?.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewSkills), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, skills.map(s => React.createElement('li', { key: s.id }, s.text)))),
-                languages?.length > 0 && React.createElement('div', null, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewLang), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, languages.map(l => React.createElement('li', { key: l.id }, l.text))))
+                displayDob && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewDob), React.createElement('p', { className: "text-sm text-black" }, displayDob)),
+                validPersonalDetails.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewQual), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, validPersonalDetails.map(d => React.createElement('li', { key: d.id }, d.text)))),
+                validSkills.length > 0 && React.createElement('div', { className: "mb-6" }, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewSkills), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, validSkills.map(s => React.createElement('li', { key: s.id }, s.text)))),
+                validLanguages.length > 0 && React.createElement('div', null, React.createElement('h3', { className: "text-[#E31D2A] text-xs font-bold tracking-widest uppercase mb-1" }, t.previewLang), React.createElement('ul', { className: "list-disc pl-5 space-y-1 text-sm" }, validLanguages.map(l => React.createElement('li', { key: l.id }, l.text))))
             )
           ),
           React.createElement('div', { className: "w-[62%] p-6 pr-10 pt-20 order-2 flex flex-col relative" },
             React.createElement('div', { className: "w-full text-center text-4xl font-bold text-gray-300 tracking-widest uppercase mb-6" }, t.previewCV),
-            workExperience?.length > 0 && React.createElement(React.Fragment, null, React.createElement(SectionTitle, null, t.previewExp), workExperience.map(exp => React.createElement('div', { key: exp.id, className: "mb-6" }, 
+            cleanWorkExp.length > 0 && React.createElement(React.Fragment, null, React.createElement(SectionTitle, null, t.previewExp), cleanWorkExp.map(exp => React.createElement('div', { key: exp.id, className: "mb-6" }, 
                 React.createElement('p', { className: "text-xs uppercase" }, 
-                    React.createElement('span', { className: "font-bold" }, exp.company),
-                    exp.jobTitle && ` - ${exp.jobTitle}`
+                    exp.company && React.createElement('span', { className: "font-bold" }, exp.company),
+                    exp.jobTitle && React.createElement('span', null, exp.company ? ` - ${exp.jobTitle}` : exp.jobTitle)
                 ), 
-                React.createElement('p', { className: "text-xs text-black my-2" }, exp.dateRange), 
-                React.createElement('ul', { className: "list-disc pl-5 text-xs space-y-1" }, exp.tasks.map(task => React.createElement('li', { key: task.id }, task.text)))
+                exp.dateRange && React.createElement('p', { className: "text-xs text-black my-2" }, exp.dateRange), 
+                exp.tasks.length > 0 && React.createElement('ul', { className: "list-disc pl-5 text-xs space-y-1" }, exp.tasks.map(task => React.createElement('li', { key: task.id }, task.text)))
             ))),
-            education?.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), education.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, React.createElement('p', { className: "font-bold text-sm uppercase" }, `${edu.schoolName} - ${edu.degree}`), React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), edu.description && React.createElement('p', { className: "text-xs" }, edu.description)))),
+            cleanEdu.length > 0 && React.createElement('div', { className: "mt-8" }, React.createElement(SectionTitle, null, t.previewEdu), cleanEdu.map(edu => React.createElement('div', { key: edu.id, className: "mb-6" }, 
+                React.createElement('p', { className: "font-bold text-sm uppercase" }, [edu.schoolName, edu.degree].filter(Boolean).join(' - ')), 
+                edu.dateRange && React.createElement('p', { className: "text-xs text-black my-2" }, edu.dateRange), 
+                edu.description && React.createElement('p', { className: "text-xs" }, edu.description)
+            ))),
             React.createElement('div', { className: 'flex-grow min-h-[24px]' })
             // LOGO ZOSTAŁO PRZENIESIONE NIŻEJ, ABY BYŁO NA STAŁE
           )
@@ -1086,8 +1126,8 @@
                     ),
                     React.createElement('input', { type: "text", value: item.text, onChange: (e) => setCvData(p => ({ ...p, [sectionKey]: p[sectionKey].map(i => i.id === item.id ? {...i, text: e.target.value} : i) })), className: "flex-grow border border-gray-300 rounded p-2 text-sm" }),
                     React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [sectionKey]: p[sectionKey].filter(i => i.id !== item.id) })), className: "text-red-500 font-bold px-2" }, "×")
-                  )),
-                  React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [sectionKey]: [...p[sectionKey], {id: generateUniqueId(), text: ''}] })), className: "mt-2 text-xs text-blue-600 hover:underline" }, "+ Dodaj")
+                 )),
+                 React.createElement('button', { onClick: () => setCvData(p => ({ ...p, [sectionKey]: [...p[sectionKey], {id: generateUniqueId(), text: ''}] })), className: "mt-2 text-xs text-blue-600 hover:underline" }, "+ Dodaj")
                );
            }
            return null;
